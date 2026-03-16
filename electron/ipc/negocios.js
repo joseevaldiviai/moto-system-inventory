@@ -1,4 +1,4 @@
-const { ipcMain, dialog } = require('electron')
+const { ipcMain, dialog, BrowserWindow } = require('electron')
 const { getDb } = require('../db/database')
 const { requireAuth, requireSupervisor } = require('./usuarios')
 const fs = require('fs')
@@ -45,7 +45,9 @@ function buildItemSnapshot(row, key, item) {
   const cantidad = item.cantidad ?? 1
   if (cantidad <= 0) throw new Error('Cantidad inválida')
 
-  const descuento_pct = item.descuento_pct ?? 0
+  const rawDesc = item.descuento_pct
+  const descuento_pct = rawDesc === '' || rawDesc === null || rawDesc === undefined ? 0 : Number(rawDesc)
+  if (Number.isNaN(descuento_pct)) throw new Error('Descuento inválido')
   if (descuento_pct < 0) throw new Error('Descuento inválido')
   if (descuento_pct > row.descuento_maximo_pct) throw new Error('Descuento supera el máximo permitido')
 
@@ -60,6 +62,11 @@ function buildItemSnapshot(row, key, item) {
 
   return {
     descripcion: item.descripcion ?? buildDescripcion(row, key),
+    modelo: row.modelo ?? null,
+    tipo: row.tipo ?? null,
+    color: row.color ?? null,
+    cilindrada: row.cilindrada ?? null,
+    motor: row.motor ?? null,
     precio_costo_snap: row.precio,
     precio_final_snap: row.precio_final,
     descuento_maximo_snap: row.descuento_maximo_pct,
@@ -148,7 +155,8 @@ function reserveRollback(db, table, id, cantidad) {
 }
 
 function ensurePdfPath(defaultName) {
-  return dialog.showSaveDialog({
+  const win = BrowserWindow.getFocusedWindow()
+  return dialog.showSaveDialog(win ?? undefined, {
     defaultPath: defaultName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }]
   })
@@ -170,6 +178,40 @@ function drawTable(doc, columns, rows) {
       doc.text(vals[i] ?? '', x, y, { width: colWidth - 6 })
     }
     y += 12
+  }
+
+  drawRow(columns, true)
+  for (const r of rows) drawRow(r, false)
+  doc.moveDown(1)
+}
+
+function drawInvoiceTable(doc, columns, rows) {
+  const pageLeft = doc.page.margins.left
+  const pageRight = doc.page.width - doc.page.margins.right
+  const pageWidth = pageRight - pageLeft
+  const baseWidths = columns.length === 10
+    ? [0.22, 0.12, 0.10, 0.08, 0.09, 0.09, 0.06, 0.08, 0.07, 0.09]
+    : [0.46, 0.14, 0.12, 0.12, 0.16]
+  const colWidths = baseWidths.map(p => p * pageWidth)
+  let y = doc.y + 8
+
+  const drawRow = (vals, isHeader) => {
+    const rowHeight = 16
+    if (y + rowHeight > doc.page.height - doc.page.margins.bottom - 20) {
+      doc.addPage()
+      y = doc.y
+    }
+    doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica').fontSize(8)
+    let x = pageLeft
+    for (let i = 0; i < columns.length; i++) {
+      const w = colWidths[i] ?? (pageWidth / columns.length)
+      const text = vals[i] ?? ''
+      const align = i === 0 ? 'left' : 'right'
+      doc.text(text, x + 4, y + 4, { width: w - 8, align })
+      doc.rect(x, y, w, rowHeight).strokeColor('#d9d9d9').stroke()
+      x += w
+    }
+    y += rowHeight
   }
 
   drawRow(columns, true)
@@ -200,6 +242,69 @@ async function exportPdf({ title, subtitle, columns, rows, totals, defaultName }
     doc.font('Helvetica').fontSize(9)
     for (const line of totals) doc.text(line)
   }
+
+  doc.end()
+
+  await new Promise((resolve, reject) => {
+    stream.on('finish', resolve)
+    stream.on('error', reject)
+  })
+
+  return { ok: true, path: filePath }
+}
+
+function formatMoney(n) {
+  const num = Number(n ?? 0)
+  return num.toFixed(2)
+}
+
+async function exportProformaPdf({ proforma, items }) {
+  const { filePath } = await ensurePdfPath(`${proforma.codigo}.pdf`)
+  if (!filePath) return { ok: false }
+
+  const doc = new PDFDocument({ margin: 36 })
+  const stream = fs.createWriteStream(filePath)
+  doc.pipe(stream)
+
+  doc.font('Helvetica-Bold').fontSize(18).text('PROFORMA')
+  doc.font('Helvetica').fontSize(9).fillColor('#444')
+  doc.text(`N° ${proforma.codigo}`)
+  doc.text(`Estado: ${proforma.estado}`)
+  doc.text(`Fecha: ${proforma.fecha_creacion}`)
+  doc.text(`Vigente hasta: ${proforma.fecha_expiracion}`)
+  doc.text(`Vendedor: ${proforma.vendedor_nombre}`)
+  doc.fillColor('#000')
+  doc.moveDown(1)
+
+  doc.font('Helvetica-Bold').fontSize(10).text('CLIENTE')
+  doc.font('Helvetica').fontSize(9).fillColor('#333')
+  doc.text(proforma.cliente_nombre)
+  doc.text(`${proforma.cliente_ci_nit} · ${proforma.cliente_celular}`)
+  doc.fillColor('#000')
+  doc.moveDown(1.2)
+
+  const columns = ['Descripcion', 'Modelo', 'Tipo', 'Color', 'Cilindrada', 'Motor', 'Cant', 'P.Unit', 'Desc %', 'Subtotal']
+  const rows = items.map(it => ([
+    it.descripcion,
+    it.modelo ?? '',
+    it.tipo ?? '',
+    it.color ?? '',
+    it.cilindrada ?? '',
+    it.motor ?? '',
+    String(it.cantidad),
+    formatMoney(it.precio_unitario_final),
+    formatMoney(it.descuento_pct),
+    formatMoney(it.subtotal),
+  ]))
+
+  drawInvoiceTable(doc, columns, rows)
+
+  doc.moveDown(0.5)
+  doc.font('Helvetica-Bold').fontSize(10).text('Totales')
+  doc.font('Helvetica').fontSize(9)
+  doc.text(`Subtotal: ${formatMoney(proforma.subtotal)}`)
+  doc.text(`Descuentos: ${formatMoney(proforma.total_descuentos)}`)
+  doc.text(`Total: ${formatMoney(proforma.total)}`)
 
   doc.end()
 
@@ -283,10 +388,23 @@ function registerProformasHandlers() {
       const totals = calcTotales(resolved.map(r => r.snapshot))
 
       // Fecha expiración
-      const dias = data.dias_vigencia ?? 7
-      const expiracion = new Date()
-      expiracion.setDate(expiracion.getDate() + dias)
-      const fechaExp = expiracion.toISOString().slice(0, 19).replace('T', ' ')
+      let fechaExp
+      if (data.fecha_limite) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data.fecha_limite)
+        if (!m) return { ok: false, error: 'Fecha limite invalida' }
+        const year = Number(m[1])
+        const month = Number(m[2]) - 1
+        const day = Number(m[3])
+        const expiracion = new Date(year, month, day, 23, 59, 59)
+        if (Number.isNaN(expiracion.getTime())) return { ok: false, error: 'Fecha limite invalida' }
+        if (expiracion < new Date()) return { ok: false, error: 'La fecha limite no puede ser pasada' }
+        fechaExp = expiracion.toISOString().slice(0, 19).replace('T', ' ')
+      } else {
+        const dias = data.dias_vigencia ?? 7
+        const expiracion = new Date()
+        expiracion.setDate(expiracion.getDate() + dias)
+        fechaExp = expiracion.toISOString().slice(0, 19).replace('T', ' ')
+      }
 
       const insertProforma = db.transaction(() => {
         const r = db.prepare(`
@@ -303,9 +421,10 @@ function registerProformasHandlers() {
         const insertItem = db.prepare(`
           INSERT INTO proforma_items
             (proforma_id, moto_id, accesorio_id, repuesto_id, descripcion,
+             modelo, tipo, color, cilindrada, motor,
              precio_costo_snap, precio_final_snap, descuento_maximo_snap,
              descuento_pct, descuento_monto, cantidad, precio_unitario_final, subtotal)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         for (const item of resolved) {
@@ -315,6 +434,11 @@ function registerProformasHandlers() {
             item.key === 'accesorio_id' ? item.id : null,
             item.key === 'repuesto_id' ? item.id : null,
             item.snapshot.descripcion,
+            item.snapshot.modelo,
+            item.snapshot.tipo,
+            item.snapshot.color,
+            item.snapshot.cilindrada,
+            item.snapshot.motor,
             item.snapshot.precio_costo_snap,
             item.snapshot.precio_final_snap,
             item.snapshot.descuento_maximo_snap,
@@ -332,6 +456,21 @@ function registerProformasHandlers() {
 
       const id = insertProforma()
       return { ok: true, data: { id } }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  ipcMain.handle('proformas:exportar-pdf', async (_, { token, id }) => {
+    try {
+      requireAuth(token)
+      const db = getDb()
+      const proforma = db.prepare(`
+        SELECT p.*, u.nombre as vendedor_nombre
+        FROM proformas p JOIN usuarios u ON p.vendedor_id = u.id
+        WHERE p.id = ?
+      `).get(id)
+      if (!proforma) return { ok: false, error: 'Proforma no encontrada' }
+      const items = db.prepare("SELECT * FROM proforma_items WHERE proforma_id = ?").all(id)
+      return await exportProformaPdf({ proforma, items })
     } catch (e) { return { ok: false, error: e.message } }
   })
 

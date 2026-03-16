@@ -25,8 +25,10 @@ async function createWindow() {
   registerConfigHandlers()
 
   // Backup de BD
-  ipcMain.handle('app:backup', async () => {
+  ipcMain.handle('app:backup', async (_, { token } = {}) => {
     const { getDbPath } = require('./db/database')
+    const { requireSupervisor } = require('./ipc/usuarios')
+    requireSupervisor(token)
     const { filePath } = await dialog.showSaveDialog(mainWindow, {
       defaultPath: `moto-system-backup-${Date.now()}.db`,
       filters: [{ name: 'Base de datos SQLite', extensions: ['db'] }],
@@ -37,6 +39,46 @@ async function createWindow() {
   })
 
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('app:export-manual-pdf', async () => {
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `manual-moto-system-${Date.now()}.pdf`,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (!filePath) return { ok: false }
+
+    const exportWin = new BrowserWindow({
+      width: 1200,
+      height: 900,
+      show: false,
+      backgroundColor: '#ffffff',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      },
+    })
+
+    const loadUrl = isDev
+      ? 'http://localhost:5173/#/manual'
+      : `file://${path.join(__dirname, '../dist/index.html')}#/manual`
+
+    await exportWin.loadURL(loadUrl)
+
+    await exportWin.webContents.executeJavaScript(
+      "document.documentElement.setAttribute('data-theme','light')",
+      true
+    )
+
+    const pdfData = await exportWin.webContents.printToPDF({
+      printBackground: true,
+      marginsType: 1,
+      pageSize: 'A4',
+    })
+
+    fs.writeFileSync(filePath, pdfData)
+    exportWin.close()
+    return { ok: true, path: filePath }
+  })
 
   // Crear ventana
   mainWindow = new BrowserWindow({
@@ -52,6 +94,17 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
     show: false,
+  })
+
+  mainWindow.on('close', () => {
+    try {
+      mainWindow.webContents.executeJavaScript(
+        "localStorage.removeItem('token'); localStorage.removeItem('usuario');",
+        true
+      )
+    } catch {
+      // Si falla, no bloquea el cierre.
+    }
   })
 
   mainWindow.once('ready-to-show', () => mainWindow.show())

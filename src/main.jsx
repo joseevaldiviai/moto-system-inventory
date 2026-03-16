@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import 'react-datepicker/dist/react-datepicker.css'
 
 const style = document.createElement('style')
 style.textContent = `
@@ -65,6 +66,27 @@ style.textContent = `
   ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
   input, select, textarea, button { font-family: inherit; }
   input:focus, select:focus, textarea:focus { border-color: var(--accent) !important; }
+  .react-datepicker { font-family: Georgia,serif; background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  .react-datepicker__header { background: var(--bg-2); border-bottom: 1px solid var(--border); }
+  .react-datepicker__current-month, .react-datepicker-time__header, .react-datepicker-year-header { color: var(--text-strong); }
+  .react-datepicker__day-name, .react-datepicker__day, .react-datepicker__time-name { color: var(--text-dim); }
+  .react-datepicker__day--selected, .react-datepicker__day--keyboard-selected { background: var(--accent); color: var(--accent-contrast); }
+  .react-datepicker__day:hover { background: var(--accent-weak); }
+  .react-datepicker__triangle { display: none; }
+  .manual-pair { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 12px; }
+  @media print {
+    html, body, #root { height: auto !important; }
+    body { background: #fff !important; color: #000 !important; }
+    div { box-shadow: none !important; }
+    aside { display: none !important; }
+    main { overflow: visible !important; height: auto !important; }
+    .manual-page { padding: 0 !important; }
+    .manual-page img { max-width: 100% !important; page-break-inside: avoid; break-inside: avoid; }
+    .manual-page .manual-pair { page-break-inside: avoid; break-inside: avoid; }
+    button { display: none !important; }
+    .manual-annex { page-break-before: always; }
+    .manual-pair { page-break-after: always; }
+  }
 `
 document.head.appendChild(style)
 

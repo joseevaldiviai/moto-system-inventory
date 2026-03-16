@@ -1,0 +1,58 @@
+MANUAL DE INSTALACION - MOTO SYSTEM
+===================================
+
+1) Requisitos del sistema
+- Sistema operativo: Windows 7/10/11 (64-bit).
+- Memoria RAM: 4 GB minimo (recomendado 8 GB).
+- Espacio libre: 500 MB minimo.
+- No requiere internet permanente.
+- No requiere Node.js, Python ni servidores externos.
+
+2) Archivos necesarios
+- Instalador: moto-system.exe
+- (Opcional) Icono o acceso directo en el escritorio.
+
+3) Instalacion paso a paso
+1. Ejecuta el instalador moto-system.exe.
+2. Acepta los permisos de Windows si aparecen.
+3. Elige la carpeta de instalacion.
+4. Finaliza el asistente.
+5. Abre la aplicacion desde el acceso directo.
+
+4) Base de datos y ubicacion
+La base de datos local se guarda en:
+C:\Users\<usuario>\AppData\Roaming\moto-system\moto_system.db
+
+Importante:
+- Este archivo contiene inventario, clientes, proformas, ventas y configuracion.
+- No lo borres si necesitas conservar tu informacion.
+
+5) Primera ejecucion
+- En la pantalla de login, crea el admin inicial.
+- Usuario inicial: admin
+- Contrasena inicial: admin123
+- Cambia la contrasena desde Usuarios o Perfil.
+
+6) Actualizaciones
+- Para actualizar, instala la nueva version encima o en una carpeta nueva.
+- Conserva el archivo moto_system.db para mantener la informacion.
+
+7) Respaldo y restauracion
+Respaldo:
+- Ve a Perfil > Respaldo de base de datos.
+- Guarda el archivo .db en una carpeta segura o en la nube.
+
+Restauracion:
+1. Cierra la aplicacion.
+2. Reemplaza el archivo moto_system.db en la ruta indicada.
+3. Abre la aplicacion.
+
+8) Problemas comunes
+- No inicia: verifica permisos de instalacion.
+- No se guardan datos: confirma espacio en disco y permisos.
+- Error en backup: revisa que la ruta elegida exista.
+
+9) Contacto tecnico
+- Si necesitas soporte, informa la version de la app y el error exacto.
+
+FIN DEL MANUAL DE INSTALACION

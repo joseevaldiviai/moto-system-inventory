@@ -3,9 +3,10 @@ import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 
 export default function Perfil() {
-  const { token, usuario } = useAuthStore()
+  const { token, usuario, esSupervisor } = useAuthStore()
   const [form, setForm] = useState({ actual: '', nueva: '', confirmar: '' })
   const [loading, setLoading] = useState(false)
+  const [backupLoading, setBackupLoading] = useState(false)
 
   const cambiar = async () => {
     if (!form.actual || !form.nueva || !form.confirmar) return toast.error('Completa todos los campos')
@@ -23,6 +24,19 @@ export default function Perfil() {
       setForm({ actual: '', nueva: '', confirmar: '' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const respaldar = async () => {
+    setBackupLoading(true)
+    try {
+      const res = await window.api.backup({ token })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo generar el respaldo')
+      toast.success(`Respaldo guardado: ${res.path}`)
+    } catch {
+      toast.error('Error al generar respaldo')
+    } finally {
+      setBackupLoading(false)
     }
   }
 
@@ -62,6 +76,18 @@ export default function Perfil() {
           {loading ? 'Actualizando...' : 'Actualizar'}
         </button>
       </div>
+
+      {esSupervisor() && (
+        <div style={{ ...S.card, marginTop: 16 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Respaldo de base de datos</div>
+          <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
+            Genera una copia de seguridad manual en un archivo `.db`.
+          </div>
+          <button onClick={respaldar} disabled={backupLoading} style={{ ...S.btn, marginTop: 10, opacity: backupLoading ? 0.7 : 1 }}>
+            {backupLoading ? 'Generando...' : 'Sacar respaldo'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

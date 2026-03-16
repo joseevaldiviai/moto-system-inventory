@@ -4,8 +4,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 // React nunca toca Node.js directamente — todo pasa por aquí
 contextBridge.exposeInMainWorld('api', {
   // App
-  backup:     ()           => ipcRenderer.invoke('app:backup'),
+  backup:     (data)       => ipcRenderer.invoke('app:backup', data),
   version:    ()           => ipcRenderer.invoke('app:version'),
+  exportManualPdf: ()      => ipcRenderer.invoke('app:export-manual-pdf'),
 
   // Config
   configGet:          (data) => ipcRenderer.invoke('config:get', data),
@@ -61,6 +62,7 @@ contextBridge.exposeInMainWorld('api', {
   obtenerProforma:    (data)       => ipcRenderer.invoke('proformas:obtener', data),
   crearProforma:      (data)       => ipcRenderer.invoke('proformas:crear', data),
   cancelarProforma:   (data)       => ipcRenderer.invoke('proformas:cancelar', data),
+  exportarProformaPdf:(data)       => ipcRenderer.invoke('proformas:exportar-pdf', data),
 
   // Ventas
   listarVentas:       (data)       => ipcRenderer.invoke('ventas:listar', data),

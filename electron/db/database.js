@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3')
 const path = require('path')
+const fs = require('fs')
 const { app } = require('electron')
 
 let db = null
@@ -7,10 +8,21 @@ let db = null
 function getDbPath() {
   const envPath = process.env.MOTO_DB_PATH
   if (envPath) return envPath
-  const isDev = process.env.NODE_ENV === 'development'
-  if (isDev) return path.join(process.cwd(), 'moto_system.db')
   const userDataPath = app.getPath('userData')
-  return path.join(userDataPath, 'moto_system.db')
+  const userDb = path.join(userDataPath, 'moto_system.db')
+  const cwdDb = path.join(process.cwd(), 'moto_system.db')
+
+  // Migra automaticamente desde la ruta antigua en desarrollo si existe.
+  if (!fs.existsSync(userDb) && fs.existsSync(cwdDb)) {
+    try {
+      fs.copyFileSync(cwdDb, userDb)
+      console.log('[DB] Migrada desde', cwdDb)
+    } catch (e) {
+      console.warn('[DB] No se pudo migrar DB:', e.message)
+    }
+  }
+
+  return userDb
 }
 
 function getDb() {
@@ -30,6 +42,7 @@ function initDb() {
 
   createTables()
   ensureMarcasSchema()
+  ensureProformaItemsSchema()
   seedConfig()
   console.log('[DB] Inicializada correctamente')
   return db
@@ -142,6 +155,11 @@ function createTables() {
       accesorio_id          INTEGER REFERENCES accesorios(id),
       repuesto_id           INTEGER REFERENCES repuestos(id),
       descripcion           TEXT    NOT NULL,
+      modelo                TEXT,
+      tipo                  TEXT,
+      color                 TEXT,
+      cilindrada            TEXT,
+      motor                 TEXT,
       precio_costo_snap     REAL    NOT NULL,
       precio_final_snap     REAL    NOT NULL,
       descuento_maximo_snap REAL    NOT NULL,
@@ -271,6 +289,22 @@ function ensureMarcasSchema() {
   })
 
   tx()
+}
+
+function ensureProformaItemsSchema() {
+  const ensureColumn = (table, columnDef) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+    const colName = columnDef.split(/\s+/)[0]
+    if (!cols.includes(colName)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`)
+    }
+  }
+
+  ensureColumn('proforma_items', 'modelo TEXT')
+  ensureColumn('proforma_items', 'tipo TEXT')
+  ensureColumn('proforma_items', 'color TEXT')
+  ensureColumn('proforma_items', 'cilindrada TEXT')
+  ensureColumn('proforma_items', 'motor TEXT')
 }
 
 function seedConfig() {

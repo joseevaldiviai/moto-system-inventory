@@ -9,6 +9,7 @@ const NAV = [
   { to:'/proformas', label:'Proformas',  icon:'📋', roles:['SUPERVISOR','CAJERO'] },
   { to:'/ventas',    label:'Ventas',     icon:'💰', roles:['SUPERVISOR','CAJERO'] },
   { to:'/reportes',  label:'Reportes',   icon:'📊', roles:['SUPERVISOR','CAJERO'] },
+  { to:'/manual',    label:'Manual',     icon:'📘', roles:['SUPERVISOR','CAJERO'] },
   { to:'/perfil',    label:'Mi Cuenta',  icon:'🔑', roles:['SUPERVISOR','CAJERO'] },
   { to:'/usuarios',  label:'Usuarios',   icon:'🔐', roles:['SUPERVISOR'] },
 ]

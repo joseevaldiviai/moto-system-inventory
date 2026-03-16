@@ -1,0 +1,151 @@
+MANUAL DE USUARIO EXTENSO - MOTO SYSTEM
+=======================================
+
+INDICE
+1. Introduccion
+2. Acceso y roles
+3. Estructura general del sistema
+4. Flujo recomendado de trabajo
+5. Dashboard
+6. Inventario
+7. Proformas
+8. Ventas
+9. Reportes
+10. Usuarios
+11. Perfil y respaldo
+12. Buenas practicas
+13. Preguntas frecuentes
+
+1) Introduccion
+Moto System es un sistema de gestion para concesionario de motos. Esta orientado a controlar inventario, crear proformas, registrar ventas y generar reportes, todo en un entorno de escritorio sin necesidad de internet permanente.
+
+2) Acceso y roles
+- Supervisor: acceso completo, crea usuarios, configura costos y controla reportes.
+- Cajero: realiza operaciones de ventas y consultas.
+
+Recomendacion:
+- Cada persona debe tener su propio usuario.
+- Cambia contrasenas regularmente.
+
+3) Estructura general del sistema
+El sistema esta dividido en modulos:
+- Dashboard: indicadores y configuracion rapida.
+- Inventario: motos, accesorios, repuestos y marcas.
+- Proformas: reservas temporales de stock con fecha limite.
+- Ventas: conversion de proformas o ventas directas.
+- Reportes: consultas y exportaciones.
+- Usuarios: gestion de cuentas y roles.
+- Perfil: datos del usuario y respaldo.
+
+4) Flujo recomendado de trabajo
+1. Configurar costos de tramites (BSISA y PLACA).
+2. Crear marcas.
+3. Registrar productos en inventario.
+4. Crear proformas y entregarlas al cliente.
+5. Convertir proformas a ventas cuando se confirme.
+6. Generar reportes y respaldos periodicos.
+
+5) Dashboard
+Objetivo:
+- Ver resumen general del sistema.
+- Revisar stock disponible.
+- Ajustar costos de tramites.
+
+Uso:
+- Verifica tarjetas de stock y valor de inventario.
+- Ajusta costos y presiona Guardar.
+- Usa accesos rapidos para ir a proformas o ventas.
+
+6) Inventario
+Objetivo:
+- Registrar motos, accesorios y repuestos.
+- Controlar stock y precios.
+
+Pasos:
+1. Crear marcas desde la pestaña Marcas.
+2. Registrar motos con marca, modelo, tipo, color, cilindrada, motor, chasis, precio y descuento maximo.
+3. Registrar accesorios y repuestos con tipo, marca, precio y descuento maximo.
+4. Usar importacion CSV para carga masiva.
+5. Exportar PDF para listados.
+
+Buenas practicas:
+- Mantener precios actualizados.
+- Revisar el stock despues de ventas y proformas.
+
+7) Proformas
+Objetivo:
+- Reservar stock y entregar documento al cliente.
+
+Pasos:
+1. Completa datos del cliente.
+2. Selecciona fecha limite de vigencia.
+3. Agrega productos al detalle.
+4. Ajusta descuentos (no mayores al maximo permitido).
+5. Guarda la proforma.
+6. Usa Ver para revisar la proforma.
+7. Imprime o exporta PDF para entregar al cliente.
+8. Cancela si no se concreta.
+
+Notas:
+- Las proformas reservan stock hasta su vencimiento.
+- Si vencen, se libera el stock.
+
+8) Ventas
+Objetivo:
+- Registrar la venta final.
+
+Pasos:
+1. Selecciona una proforma activa.
+2. Convierte a venta y confirma.
+3. Si aplica, registra tramites (BSISA, PLACA).
+
+Notas:
+- El cajero solo puede consolidar ventas desde proformas.
+- Una venta final actualiza stock y reportes.
+
+9) Reportes
+Objetivo:
+- Analizar ventas y proformas.
+
+Pasos:
+1. Selecciona tipo de reporte (ventas o proformas).
+2. Define rango de fechas.
+3. Filtra por usuario o tipo de producto si aplica.
+4. Genera y revisa resultados.
+5. Exporta PDF si necesitas archivarlo o imprimir.
+
+10) Usuarios
+Objetivo:
+- Gestionar accesos del sistema.
+
+Pasos:
+1. Crear usuarios con rol Supervisor o Cajero.
+2. Editar datos o desactivar usuarios.
+3. Cambiar contrasenas cuando sea necesario.
+
+Recomendacion:
+- No compartir credenciales.
+
+11) Perfil y respaldo
+Objetivo:
+- Gestionar la cuenta actual.
+- Realizar respaldos de base de datos.
+
+Pasos:
+1. Cambiar contrasena desde Perfil.
+2. Usar el boton de Respaldo para generar archivo .db.
+3. Guardar el archivo en lugar seguro.
+
+12) Buenas practicas
+- Realiza respaldos diarios o semanales.
+- Evita cerrar la app durante exportaciones.
+- Verifica fechas limite de proformas.
+- Mantener inventario actualizado.
+
+13) Preguntas frecuentes
+- Se puede usar sin internet? Si, la informacion es local.
+- Que pasa si cierro la app? La sesion se cierra y debe reingresar.
+- Se puede imprimir proformas? Si, desde el detalle.
+- Que pasa si la proforma vence? Se marca como vencida y libera stock.
+
+FIN DEL MANUAL DE USUARIO

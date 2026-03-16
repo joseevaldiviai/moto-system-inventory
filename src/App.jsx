@@ -11,6 +11,7 @@ import Ventas from './pages/Ventas'
 import Reportes from './pages/Reportes'
 import Usuarios from './pages/Usuarios'
 import Perfil from './pages/Perfil'
+import Manual from './pages/Manual'
 
 function PrivateRoute({ children }) {
   const { token } = useAuthStore()
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="proformas"  element={<Proformas />} />
           <Route path="ventas"     element={<Ventas />} />
           <Route path="reportes"   element={<Reportes />} />
+          <Route path="manual"     element={<Manual />} />
           <Route path="perfil"     element={<Perfil />} />
           <Route path="usuarios"   element={<SupervisorRoute><Usuarios /></SupervisorRoute>} />
         </Route>

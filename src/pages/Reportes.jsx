@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import DatePickerInput from '../components/DatePickerInput'
 
 export default function Reportes() {
   const { token, esSupervisor } = useAuthStore()
@@ -72,11 +73,21 @@ export default function Reportes() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
           <div>
             <div style={S.label}>Desde</div>
-            <input type="date" style={S.input} value={filtro.fechaInicio} onChange={e => setFiltro(f => ({ ...f, fechaInicio: e.target.value }))} />
+            <DatePickerInput
+              value={filtro.fechaInicio}
+              onChange={(v) => setFiltro(f => ({ ...f, fechaInicio: v }))}
+              placeholder="YYYY-MM-DD"
+              inputStyle={S.input}
+            />
           </div>
           <div>
             <div style={S.label}>Hasta</div>
-            <input type="date" style={S.input} value={filtro.fechaFin} onChange={e => setFiltro(f => ({ ...f, fechaFin: e.target.value }))} />
+            <DatePickerInput
+              value={filtro.fechaFin}
+              onChange={(v) => setFiltro(f => ({ ...f, fechaFin: v }))}
+              placeholder="YYYY-MM-DD"
+              inputStyle={S.input}
+            />
           </div>
           <div>
             <div style={S.label}>Tipo producto</div>
