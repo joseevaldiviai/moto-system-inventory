@@ -43,7 +43,8 @@ Thumbs.db
 tmp/
 temp/
 
-src/images/
+# Assets
+# Do not ignore src/images so UI assets can be bundled
 
 # Build outputs
 /dist-electron/
