@@ -44,3 +44,14 @@ tmp/
 temp/
 
 src/images/
+
+# Build outputs
+/dist-electron/
+
+# Local DB files
+moto_system.db
+moto_system.db-shm
+moto_system.db-wal
+
+# PDFs generated
+*.pdf
