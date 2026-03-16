@@ -1,6 +1,7 @@
 {
   "name": "moto-system",
   "version": "1.0.0",
+  "author": "Jose Valdivia Ignacio",
   "description": "Sistema de gestión para concesionario de motos",
   "main": "electron/main.js",
   "scripts": {
@@ -43,14 +44,11 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "public/icon.ico",
-      "installerHeaderIcon": "public/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
