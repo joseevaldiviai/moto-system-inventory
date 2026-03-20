@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 import DatePickerInput from '../components/DatePickerInput'
+import { api } from '../lib/apiClient'
 
 export default function Proformas() {
   const { token } = useAuthStore()
@@ -19,10 +20,10 @@ export default function Proformas() {
 
   const load = async () => {
     const [p, m, a, r] = await Promise.all([
-      window.api.listarProformas({ token }),
-      window.api.listarMotos({ token }),
-      window.api.listarAccesorios({ token }),
-      window.api.listarRepuestos({ token }),
+      api.listarProformas({ token }),
+      api.listarMotos({ token }),
+      api.listarAccesorios({ token }),
+      api.listarRepuestos({ token }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
@@ -76,7 +77,7 @@ export default function Proformas() {
     if (!cliente.nombre || !cliente.ci_nit || !cliente.celular) return toast.error('Completa datos del cliente')
     if (items.length === 0) return toast.error('Agrega al menos un ítem')
 
-    const res = await window.api.crearProforma({
+    const res = await api.crearProforma({
       token,
       data: {
         cliente_nombre: cliente.nombre,
@@ -96,7 +97,7 @@ export default function Proformas() {
   }
 
   const cancelar = async (id) => {
-    const res = await window.api.cancelarProforma({ token, id })
+    const res = await api.cancelarProforma({ token, id })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Proforma cancelada')
     load()
@@ -105,7 +106,7 @@ export default function Proformas() {
   const verProforma = async (id) => {
     setDetalleLoading(true)
     try {
-      const res = await window.api.obtenerProforma({ token, id })
+      const res = await api.obtenerProforma({ token, id })
       if (!res.ok) return toast.error(res.error || 'Error')
       setDetalle(res.data)
     } finally {
@@ -117,9 +118,9 @@ export default function Proformas() {
     if (!id) return toast.error('Proforma inválida')
     setPrintLoading(true)
     try {
-      const res = await window.api.exportarProformaPdf({ token, id })
-      if (!res.ok) return toast.error(res.error || 'No se pudo generar el PDF')
-      toast.success(`PDF generado: ${res.path}`)
+      const res = await api.exportarProformaArchivo({ token, id })
+      if (!res.ok) return toast.error(res.error || 'No se pudo exportar el archivo')
+      toast.success(`Archivo generado: ${res.path}`)
     } finally {
       setPrintLoading(false)
     }
@@ -138,7 +139,7 @@ export default function Proformas() {
   }
 
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
     input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-3)', color: 'var(--text)' },
     label: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
@@ -151,16 +152,16 @@ export default function Proformas() {
   const productos = itemForm.tipo === 'moto' ? motos : itemForm.tipo === 'accesorio' ? accesorios : repuestos
 
   return (
-    <div style={S.page}>
-      <div style={{ marginBottom: 18 }}>
+    <div className="page-shell" style={S.page}>
+      <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>PROFORMAS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Crear y gestionar</h1>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
+      <div className="grid-main-two">
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Crear proforma</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+          <div className="grid-four">
             <div>
               <div style={S.label}>Cliente</div>
               <input style={S.input} value={cliente.nombre} onChange={e => setCliente(c => ({ ...c, nombre: e.target.value }))} />
@@ -184,7 +185,7 @@ export default function Proformas() {
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+          <div className="grid-four" style={{ marginTop: 12 }}>
             <div>
               <div style={S.label}>Tipo</div>
               <select style={S.input} value={itemForm.tipo} onChange={e => setItemForm(f => ({ ...f, tipo: e.target.value }))}>
@@ -220,7 +221,7 @@ export default function Proformas() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <div className="button-row" style={{ marginTop: 10 }}>
             <button onClick={addItem} style={S.btn}>Agregar ítem</button>
             <button onClick={crearProforma} style={S.btn}>Guardar proforma</button>
           </div>
@@ -238,7 +239,7 @@ export default function Proformas() {
                       <button onClick={() => removeItem(idx)} style={S.btn}>Quitar</button>
                     </div>
                     {it._edit && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+                      <div className="grid-three" style={{ gap: 8, marginTop: 8 }}>
                         <div>
                           <div style={S.label}>Descripcion</div>
                           <input style={S.input} value={it.descripcion || ''} onChange={e => updateItem(idx, { descripcion: e.target.value })} />
@@ -268,7 +269,7 @@ export default function Proformas() {
 
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Proformas recientes</div>
-          <div style={{ maxHeight: 480, overflow: 'auto' }}>
+          <div className="list-scroll">
             {proformas.map(p => (
               <div key={p.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
                 <div style={{ fontSize: 12 }}>{p.codigo} · {p.cliente_nombre}</div>
@@ -288,8 +289,8 @@ export default function Proformas() {
             {detalleLoading && <div style={{ color: 'var(--text-muted)' }}>Cargando...</div>}
             {!detalleLoading && !detalle && <div style={{ color: 'var(--text-muted)' }}>Selecciona una proforma</div>}
             {!detalleLoading && detalle && (
-              <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                <div className="grid-two-tight" style={{ alignItems: 'start' }}>
                   <div>
                     <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-strong)', letterSpacing: 1 }}>PROFORMA</div>
                     <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>N° {detalle.codigo}</div>
@@ -310,7 +311,8 @@ export default function Proformas() {
                 </div>
 
                 <div style={{ marginTop: 12 }}>
-                  <table style={S.table}>
+                  <div className="table-wrap">
+                    <table style={S.table}>
                     <thead>
                       <tr>
                         <th style={S.th}>Descripcion</th>
@@ -341,7 +343,8 @@ export default function Proformas() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
                 </div>
 
                 <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
@@ -362,7 +365,7 @@ export default function Proformas() {
                 </div>
 
                 <button onClick={() => imprimirProforma(detalle.id)} disabled={printLoading} style={{ ...S.btn, marginTop: 10, opacity: printLoading ? 0.7 : 1 }}>
-                  {printLoading ? 'Generando...' : 'Imprimir PDF'}
+                  {printLoading ? 'Generando...' : 'Exportar archivo'}
                 </button>
               </div>
             )}

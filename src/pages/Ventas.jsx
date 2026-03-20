@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import { api } from '../lib/apiClient'
 
 export default function Ventas() {
   const { token } = useAuthStore()
@@ -11,14 +12,14 @@ export default function Ventas() {
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   const load = async () => {
-    const res = await window.api.listarProformas({ token, estado: 'ACTIVA' })
+    const res = await api.listarProformas({ token, estado: 'ACTIVA' })
     if (res.ok) setProformas(res.data)
   }
 
   useEffect(() => { load() }, [])
 
   useEffect(() => {
-    window.api.configGet({ token }).then(r => {
+    api.configGet({ token }).then(r => {
       if (!r.ok) return
       setCostos({
         bsisa: Number(r.data?.tramite_bsisa_costo ?? 0),
@@ -28,7 +29,7 @@ export default function Ventas() {
   }, [token])
 
   const openDetail = async (id) => {
-    const res = await window.api.obtenerProforma({ token, id })
+    const res = await api.obtenerProforma({ token, id })
     if (!res.ok) return toast.error(res.error || 'Error')
     setDetail(res.data)
   }
@@ -47,7 +48,7 @@ export default function Ventas() {
       if (flags.placa) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'PLACA' })
     }
 
-    const res = await window.api.crearVenta({ token, data: { proforma_id: id, tramites: tramitesPayload } })
+    const res = await api.crearVenta({ token, data: { proforma_id: id, tramites: tramitesPayload } })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Venta consolidada')
     setDetail(null)
@@ -65,14 +66,14 @@ export default function Ventas() {
   }
 
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
     btn: { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12 },
   }
 
   return (
-    <div style={S.page}>
-      <div style={{ marginBottom: 18 }}>
+    <div className="page-shell" style={S.page}>
+      <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>VENTAS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Consolidar proformas</h1>
       </div>
@@ -84,7 +85,7 @@ export default function Ventas() {
           <div key={p.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
             <div style={{ fontSize: 12 }}>{p.codigo} · {p.cliente_nombre}</div>
             <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>Total {p.total} · {p.fecha_creacion}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <div className="button-row" style={{ marginTop: 6 }}>
               <button onClick={() => openDetail(p.id)} style={S.btn}>Ver items</button>
               <button onClick={() => consolidar(p.id)} style={S.btn}>Consolidar venta</button>
             </div>
@@ -101,7 +102,7 @@ export default function Ventas() {
               <div key={it.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
                 <div style={{ fontSize: 12 }}>{it.descripcion} · Cant {it.cantidad}</div>
                 {it.moto_id ? (
-                  <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 12 }}>
+                  <div className="button-row" style={{ gap: 12, marginTop: 6, fontSize: 12 }}>
                     <label>
                       <input type="checkbox" checked={!!tramites[it.id]?.bsisa} onChange={() => toggleTramite(it.id, 'bsisa')} /> BSISA
                     </label>
@@ -118,7 +119,7 @@ export default function Ventas() {
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-faint)' }}>
             Total proforma: {formatBs(detail.total)} · Trámites: {formatBs(tramitesTotal())} · Total final: {formatBs(Number(detail.total) + tramitesTotal())}
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <div className="button-row" style={{ marginTop: 10 }}>
             <button onClick={() => setDetail(null)} style={S.btn}>Cerrar</button>
             <button onClick={() => consolidar(detail.id)} style={S.btn}>Consolidar con trámites</button>
           </div>

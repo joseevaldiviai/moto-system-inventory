@@ -14,23 +14,32 @@ import Perfil from './pages/Perfil'
 import Manual from './pages/Manual'
 
 function PrivateRoute({ children }) {
-  const { token } = useAuthStore()
+  const { token, authReady } = useAuthStore()
+  if (!authReady) return null
   return token ? children : <Navigate to="/login" replace />
 }
 
 function SupervisorRoute({ children }) {
-  const { token, esSupervisor } = useAuthStore()
+  const { token, esSupervisor, authReady } = useAuthStore()
+  if (!authReady) return null
   if (!token) return <Navigate to="/login" replace />
   if (!esSupervisor()) return <Navigate to="/" replace />
   return children
 }
 
 export default function App() {
-  const { tema } = useAuthStore()
+  const { tema, initializeAuth, attachSessionListeners, startSessionMonitor } = useAuthStore()
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', tema || 'dark')
   }, [tema])
+
+  useEffect(() => {
+    initializeAuth()
+  }, [initializeAuth])
+
+  useEffect(() => attachSessionListeners(), [attachSessionListeners])
+  useEffect(() => startSessionMonitor(), [startSessionMonitor])
 
   return (
     <HashRouter>

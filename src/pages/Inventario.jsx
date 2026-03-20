@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import { api } from '../lib/apiClient'
 
 export default function Inventario() {
   const { token, esSupervisor } = useAuthStore()
@@ -27,10 +28,10 @@ export default function Inventario() {
     setLoading(true)
     try {
       let res
-      if (tab === 'motos') res = await window.api.listarMotos({ token })
-      if (tab === 'accesorios') res = await window.api.listarAccesorios({ token })
-      if (tab === 'repuestos') res = await window.api.listarRepuestos({ token })
-      if (tab === 'marcas') res = await window.api.listarMarcas({ token })
+      if (tab === 'motos') res = await api.listarMotos({ token })
+      if (tab === 'accesorios') res = await api.listarAccesorios({ token })
+      if (tab === 'repuestos') res = await api.listarRepuestos({ token })
+      if (tab === 'marcas') res = await api.listarMarcas({ token })
       if (res?.ok) {
         setItems(res.data)
         if (tab === 'marcas') setMarcas(res.data)
@@ -43,7 +44,7 @@ export default function Inventario() {
   useEffect(() => { load() }, [tab])
   useEffect(() => {
     if (!isSup) return
-    window.api.configGet({ token }).then(r => {
+    api.configGet({ token }).then(r => {
       if (!r.ok) return
       setConfig({
         bsisa: r.data?.tramite_bsisa_costo ?? '0',
@@ -53,7 +54,7 @@ export default function Inventario() {
   }, [token])
   useEffect(() => {
     if (!token) return
-    window.api.listarMarcas({ token }).then(r => {
+    api.listarMarcas({ token }).then(r => {
       if (r.ok) setMarcas(r.data)
     })
   }, [token])
@@ -61,9 +62,9 @@ export default function Inventario() {
   const handleCreate = async () => {
     try {
       let res
-      if (tab === 'motos') res = await window.api.crearMoto({ token, data: form })
-      if (tab === 'accesorios') res = await window.api.crearAccesorio({ token, data: form })
-      if (tab === 'repuestos') res = await window.api.crearRepuesto({ token, data: form })
+      if (tab === 'motos') res = await api.crearMoto({ token, data: form })
+      if (tab === 'accesorios') res = await api.crearAccesorio({ token, data: form })
+      if (tab === 'repuestos') res = await api.crearRepuesto({ token, data: form })
       if (!res?.ok) return toast.error(res?.error || 'Error al crear')
       toast.success('Producto creado')
       setForm({})
@@ -76,11 +77,11 @@ export default function Inventario() {
   const handleCrearMarca = async () => {
     const nombre = marcaForm.nombre?.trim()
     if (!nombre) return toast.error('Ingresa un nombre')
-    const res = await window.api.crearMarca({ token, data: { nombre } })
+    const res = await api.crearMarca({ token, data: { nombre } })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Marca creada')
     setMarcaForm({ nombre: '' })
-    const r = await window.api.listarMarcas({ token })
+    const r = await api.listarMarcas({ token })
     if (r.ok) {
       setMarcas(r.data)
       if (tab === 'marcas') setItems(r.data)
@@ -90,9 +91,9 @@ export default function Inventario() {
   const handleImport = async () => {
     try {
       let res
-      if (tab === 'motos') res = await window.api.importarMotosCsv({ token, csvText })
-      if (tab === 'accesorios') res = await window.api.importarAccesoriosCsv({ token, csvText })
-      if (tab === 'repuestos') res = await window.api.importarRepuestosCsv({ token, csvText })
+      if (tab === 'motos') res = await api.importarMotosCsv({ token, csvText })
+      if (tab === 'accesorios') res = await api.importarAccesoriosCsv({ token, csvText })
+      if (tab === 'repuestos') res = await api.importarRepuestosCsv({ token, csvText })
       if (!res?.ok) return toast.error(res?.error || 'Error al importar')
       toast.success(`Importado. Insertados: ${res.data.inserted}, Actualizados: ${res.data.updated}`)
       setCsvText('')
@@ -105,21 +106,21 @@ export default function Inventario() {
 
   const handleExport = async () => {
     let res
-    if (tab === 'motos') res = await window.api.exportarMotosPdf({ token })
-    if (tab === 'accesorios') res = await window.api.exportarAccesoriosPdf({ token })
-    if (tab === 'repuestos') res = await window.api.exportarRepuestosPdf({ token })
+    if (tab === 'motos') res = await api.exportarMotosArchivo({ token })
+    if (tab === 'accesorios') res = await api.exportarAccesoriosArchivo({ token })
+    if (tab === 'repuestos') res = await api.exportarRepuestosArchivo({ token })
     if (!res?.ok) return
     toast.success('PDF generado')
   }
 
   const handleExportAll = async () => {
-    const res = await window.api.exportarProductosPdf({ token })
+    const res = await api.exportarProductosArchivo({ token })
     if (!res?.ok) return
     toast.success('PDF generado')
   }
 
   const guardarConfig = async () => {
-    const res = await window.api.configSet({
+    const res = await api.configSet({
       token,
       data: {
         tramite_bsisa_costo: config.bsisa,
@@ -131,7 +132,7 @@ export default function Inventario() {
   }
 
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
     input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-3)', color: 'var(--text)' },
     label: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
@@ -184,13 +185,13 @@ export default function Inventario() {
   }
 
   return (
-    <div style={S.page}>
-      <div style={{ marginBottom: 18 }}>
+    <div className="page-shell" style={S.page}>
+      <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>INVENTARIO</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Productos</h1>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="button-row" style={{ marginBottom: 16 }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             ...S.btn,
@@ -201,11 +202,11 @@ export default function Inventario() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
+      <div className="grid-main-two">
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Listado</div>
           {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
-            <div style={{ maxHeight: 420, overflow: 'auto' }}>
+            <div className="table-wrap list-scroll">
               {tab === 'marcas' ? (
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead>
@@ -251,21 +252,21 @@ export default function Inventario() {
           )}
 
           {isSup && tab !== 'marcas' && (
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button onClick={handleExport} style={S.btn}>Exportar PDF</button>
+            <div className="button-row" style={{ marginTop: 12 }}>
+              <button onClick={handleExport} style={S.btn}>Exportar archivo</button>
               <button onClick={handleExportAll} style={S.btn}>Exportar Todo</button>
             </div>
           )}
         </div>
 
         {isSup && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="stack-md">
             <div style={S.card}>
               <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>
                 {tab === 'marcas' ? 'Nueva marca' : `Nuevo ${tab}`}
               </div>
               {tab === 'marcas' ? (
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="button-row">
                   <input
                     style={S.input}
                     placeholder="Nombre de marca"
@@ -276,7 +277,7 @@ export default function Inventario() {
                 </div>
               ) : (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div className="grid-two-tight">
                     {fieldsByTab[tab].map(([key, label, type]) => (
                       <div key={key}>
                         <div style={S.label}>{label}</div>
@@ -308,8 +309,8 @@ export default function Inventario() {
 
             {tab !== 'marcas' && (
               <div style={S.card}>
-                <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Importar CSV</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Importar CSV</div>
+                <div className="button-row" style={{ alignItems: 'center', marginBottom: 8 }}>
                   <input
                     type="file"
                     accept=".csv,text/csv"
@@ -333,7 +334,7 @@ export default function Inventario() {
                   value={csvText}
                   onChange={e => setCsvText(e.target.value)}
                 />
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <div className="button-row" style={{ marginTop: 10 }}>
                   <button onClick={handleImport} style={S.btn}>Importar</button>
                 </div>
               </div>
@@ -341,7 +342,7 @@ export default function Inventario() {
 
             <div style={S.card}>
               <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Costos de trámites</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end' }}>
+              <div className="grid-three" style={{ alignItems: 'end' }}>
                 <div>
                   <div style={S.label}>BSISA</div>
                   <input

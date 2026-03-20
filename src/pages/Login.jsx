@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 import logo from '../images/moto-seven7.jpeg'
+import { api } from '../lib/apiClient'
 
 export default function Login() {
   const [form, setForm]     = useState({ username: '', password: '' })
@@ -14,9 +15,9 @@ export default function Login() {
     if (!form.username || !form.password) return toast.error('Completa todos los campos')
     setLoading(true)
     try {
-      const res = await window.api.login(form)
+      const res = await api.login(form)
       if (!res.ok) return toast.error(res.error)
-      login(res.data.token, res.data.usuario)
+      login(res.data.token, res.data.usuario, res.data.refresh_token, res.data.session_id)
       toast.success(`Bienvenido, ${res.data.usuario.nombre}`)
       navigate('/')
     } finally {
@@ -25,8 +26,8 @@ export default function Login() {
   }
 
   const S = {
-    wrap:  { minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,var(--bg),var(--bg-2))', fontFamily:"Georgia,serif" },
-    card:  { width:380, padding:'40px 36px', background:'var(--card)', border:'1px solid var(--border)', borderRadius:16, boxShadow:'0 24px 80px var(--shadow)' },
+    wrap:  { minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,var(--bg),var(--bg-2))', fontFamily:"Georgia,serif", padding:'16px' },
+    card:  { width:'min(100%, 420px)', padding:'clamp(24px, 4vw, 40px) clamp(20px, 4vw, 36px)', background:'var(--card)', border:'1px solid var(--border)', borderRadius:16, boxShadow:'0 24px 80px var(--shadow)' },
     label: { fontSize:11, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase', display:'block', marginBottom:6 },
     input: { width:'100%', padding:'10px 14px', boxSizing:'border-box', background:'var(--bg-3)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text-strong)', fontSize:14, outline:'none', fontFamily:'monospace' },
     btn:   { width:'100%', padding:12, border:'none', borderRadius:8, color:'var(--accent-contrast)', fontSize:14, fontWeight:'bold', cursor:'pointer', letterSpacing:1 },
@@ -66,7 +67,7 @@ export default function Login() {
           Primera vez: usa el botón de abajo para crear el admin inicial
         </div>
         <button
-          onClick={async () => { const r = await window.api.seedAdmin(); toast[r.data?.ok ? 'success':'error'](r.data?.mensaje || r.error) }}
+          onClick={async () => { const r = await api.seedAdmin(); toast[r.data?.ok ? 'success':'error'](r.data?.mensaje || r.error) }}
           style={{ width:'100%', marginTop:8, padding:'7px', background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)', borderRadius:6, cursor:'pointer', fontSize:11 }}
         >
           Crear admin inicial

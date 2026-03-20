@@ -60,11 +60,13 @@ style.textContent = `
     --scroll-track: #e2e8f0;
     --scroll-thumb: #cbd5e1;
   }
+  html, body, #root { min-height: 100%; }
   body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: var(--scroll-track); }
   ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 3px; }
   input, select, textarea, button { font-family: inherit; }
+  button { touch-action: manipulation; }
   input:focus, select:focus, textarea:focus { border-color: var(--accent) !important; }
   .react-datepicker { font-family: Georgia,serif; background: var(--card); border: 1px solid var(--border); color: var(--text); }
   .react-datepicker__header { background: var(--bg-2); border-bottom: 1px solid var(--border); }
@@ -74,6 +76,43 @@ style.textContent = `
   .react-datepicker__day:hover { background: var(--accent-weak); }
   .react-datepicker__triangle { display: none; }
   .manual-pair { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 12px; }
+  .page-shell { padding: 32px; font-family: Georgia,serif; color: var(--text); }
+  .page-header { margin-bottom: 18px; }
+  .button-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .stack-sm { display: grid; gap: 10px; }
+  .stack-md { display: grid; gap: 16px; }
+  .grid-main-two { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+  .grid-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .grid-two-tight { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .grid-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .grid-four { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .table-wrap { width: 100%; overflow-x: auto; }
+  .list-scroll { max-height: 420px; overflow: auto; }
+  .app-shell { display: flex; min-height: 100vh; background: var(--bg); font-family: Georgia,serif; }
+  .app-sidebar { width: 220px; background: var(--bg-2); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .app-main { flex: 1; min-width: 0; overflow: auto; }
+  .app-mobile-bar { display: none; }
+  .app-overlay { display: none; }
+  .app-nav-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 2px; text-decoration: none; font-size: 13px; }
+  @media (max-width: 1200px) {
+    .grid-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 960px) {
+    .page-shell { padding: 20px; }
+    .grid-main-two, .grid-two, .grid-two-tight, .grid-three, .grid-four { grid-template-columns: minmax(0, 1fr); }
+    .app-shell { min-height: 100dvh; }
+    .app-mobile-bar { display: flex; position: sticky; top: 0; z-index: 15; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg-2) 88%, transparent); backdrop-filter: blur(10px); }
+    .app-sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 30; width: min(82vw, 320px); transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 24px 80px var(--shadow); }
+    .app-sidebar.is-open { transform: translateX(0); }
+    .app-overlay { display: block; position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .app-overlay.is-open { opacity: 1; pointer-events: auto; }
+    .app-main { overflow: visible; }
+  }
+  @media (max-width: 640px) {
+    .page-shell { padding: 16px; }
+    .page-header h1 { font-size: 20px !important; }
+    .button-row > * { flex: 1 1 100%; }
+  }
   @media print {
     html, body, #root { height: auto !important; }
     body { background: #fff !important; color: #000 !important; }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import { api } from '../lib/apiClient'
 
 export default function Perfil() {
   const { token, usuario, esSupervisor } = useAuthStore()
@@ -14,7 +15,7 @@ export default function Perfil() {
 
     setLoading(true)
     try {
-      const res = await window.api.cambiarPassword({
+      const res = await api.cambiarPassword({
         token,
         actual: form.actual,
         nueva: form.nueva,
@@ -30,9 +31,9 @@ export default function Perfil() {
   const respaldar = async () => {
     setBackupLoading(true)
     try {
-      const res = await window.api.backup({ token })
+      const res = await api.backup({ token })
       if (!res?.ok) return toast.error(res?.error || 'No se pudo generar el respaldo')
-      toast.success(`Respaldo guardado: ${res.path}`)
+      toast.success('Respaldo descargado')
     } catch {
       toast.error('Error al generar respaldo')
     } finally {
@@ -41,7 +42,7 @@ export default function Perfil() {
   }
 
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, maxWidth: 520 },
     input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-3)', color: 'var(--text)' },
     label: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
@@ -49,8 +50,8 @@ export default function Perfil() {
   }
 
   return (
-    <div style={S.page}>
-      <div style={{ marginBottom: 18 }}>
+    <div className="page-shell" style={S.page}>
+      <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>MI CUENTA</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Perfil</h1>
         <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>{usuario?.nombre} · {usuario?.username}</div>
@@ -79,9 +80,9 @@ export default function Perfil() {
 
       {esSupervisor() && (
         <div style={{ ...S.card, marginTop: 16 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Respaldo de base de datos</div>
-          <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
-            Genera una copia de seguridad manual en un archivo `.db`.
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Respaldo de base de datos</div>
+        <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
+            Genera una copia de seguridad manual en un archivo `.json`.
           </div>
           <button onClick={respaldar} disabled={backupLoading} style={{ ...S.btn, marginTop: 10, opacity: backupLoading ? 0.7 : 1 }}>
             {backupLoading ? 'Generando...' : 'Sacar respaldo'}

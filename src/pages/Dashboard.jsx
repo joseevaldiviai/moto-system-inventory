@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import { api } from '../lib/apiClient'
 
 export default function Dashboard() {
   const { usuario, token, esSupervisor } = useAuthStore()
@@ -11,14 +12,14 @@ export default function Dashboard() {
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   useEffect(() => {
-    window.api.reporteInventario({ token })
+    api.reporteInventario({ token })
       .then(r => { if (r.ok) setStats(r.data) })
       .catch(() => {})
   }, [token])
 
   useEffect(() => {
     if (!esSupervisor()) return
-    window.api.configGet({ token }).then(r => {
+    api.configGet({ token }).then(r => {
       if (!r.ok) return
       setConfig({
         bsisa: r.data?.tramite_bsisa_costo ?? '0',
@@ -28,7 +29,7 @@ export default function Dashboard() {
   }, [token])
 
   const guardarConfig = async () => {
-    const res = await window.api.configSet({
+    const res = await api.configSet({
       token,
       data: {
         tramite_bsisa_costo: config.bsisa,
@@ -47,8 +48,8 @@ export default function Dashboard() {
   ] : []
 
   return (
-    <div style={{ padding:32, fontFamily:"Georgia,serif", color:'var(--text)' }}>
-      <div style={{ marginBottom:28 }}>
+    <div className="page-shell">
+      <div className="page-header" style={{ marginBottom:28 }}>
         <div style={{ fontSize:10, letterSpacing:4, color:'var(--accent)', textTransform:'uppercase', fontFamily:'monospace' }}>PANEL PRINCIPAL</div>
         <h1 style={{ margin:'4px 0 0', fontSize:24, color:'var(--text-strong)' }}>Bienvenido, {usuario?.nombre}</h1>
         <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:4 }}>{new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</div>
@@ -77,7 +78,7 @@ export default function Dashboard() {
       {/* Accesos rápidos */}
       <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:12, padding:'20px 24px', marginBottom: 20 }}>
         <div style={{ fontSize:11, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase', marginBottom:14 }}>Accesos rápidos</div>
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+        <div className="button-row" style={{ gap:10 }}>
           {[
             { label:'+ Nueva venta',    to:'/ventas',     color:'#10b981' },
             { label:'+ Nueva proforma', to:'/proformas',  color:'#3b82f6' },
@@ -96,7 +97,7 @@ export default function Dashboard() {
       {esSupervisor() && (
         <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:12, padding:'20px 24px' }}>
           <div style={{ fontSize:11, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase', marginBottom:14 }}>Costos de trámites</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, alignItems:'end' }}>
+          <div className="grid-three" style={{ gap:12, alignItems:'end' }}>
             <div>
               <div style={{ fontSize:11, color:'var(--text-muted)', letterSpacing:2, textTransform:'uppercase', marginBottom:6 }}>BSISA</div>
               <input

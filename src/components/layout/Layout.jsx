@@ -1,4 +1,5 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../../store/authStore'
 import toast from 'react-hot-toast'
 import logo from '../../images/moto-seven7.jpeg'
@@ -17,6 +18,12 @@ const NAV = [
 export default function Layout() {
   const { usuario, logout, tema, setTema } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [location.pathname])
 
   const handleLogout = async () => {
     await logout()
@@ -25,9 +32,9 @@ export default function Layout() {
   }
 
   return (
-    <div style={{ display:'flex', height:'100vh', background:'var(--bg)', fontFamily:"Georgia,serif", overflow:'hidden' }}>
-      {/* SIDEBAR */}
-      <aside style={{ width:220, background:'var(--bg-2)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', flexShrink:0 }}>
+    <div className="app-shell">
+      <div className={`app-overlay ${menuOpen ? 'is-open' : ''}`} onClick={() => setMenuOpen(false)} />
+      <aside className={`app-sidebar ${menuOpen ? 'is-open' : ''}`}>
         <div style={{ padding:'20px 16px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center' }}>
           <img src={logo} alt="Moto Systems" style={{ width:'100%', height:'100%', objectFit:'contain' }} />
         </div>
@@ -36,14 +43,12 @@ export default function Layout() {
           {NAV.filter(n => n.roles.includes(usuario?.rol)).map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'}
               style={({ isActive }) => ({
-                display:'flex', alignItems:'center', gap:10,
-                padding:'10px 12px', borderRadius:8, marginBottom:2,
-                textDecoration:'none', fontSize:13,
                 background:   isActive ? 'var(--nav-active)' : 'transparent',
                 color:        isActive ? 'var(--accent)' : 'var(--text-dim)',
                 borderLeft:   isActive ? '3px solid var(--accent)' : '3px solid transparent',
                 fontWeight:   isActive ? 'bold' : 'normal',
               })}
+              className="app-nav-link"
             >
               <span>{item.icon}</span><span>{item.label}</span>
             </NavLink>
@@ -77,8 +82,45 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* CONTENT */}
-      <main style={{ flex:1, overflow:'auto' }}><Outlet /></main>
+      <main className="app-main">
+        <div className="app-mobile-bar">
+          <button
+            onClick={() => setMenuOpen(open => !open)}
+            style={{
+              padding:'8px 10px',
+              border:'1px solid var(--border)',
+              borderRadius:8,
+              background:'transparent',
+              color:'var(--text)',
+              cursor:'pointer',
+              fontSize:18,
+              lineHeight:1,
+            }}
+            aria-label="Abrir navegación"
+          >
+            ☰
+          </button>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:12, color:'var(--accent)', letterSpacing:2, textTransform:'uppercase' }}>Moto System</div>
+            <div style={{ fontSize:13, color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{usuario?.nombre}</div>
+          </div>
+          <button
+            onClick={() => setTema(tema === 'dark' ? 'light' : 'dark')}
+            style={{
+              padding:'8px 10px',
+              border:'1px solid var(--border)',
+              borderRadius:8,
+              background:'transparent',
+              color:'var(--text)',
+              cursor:'pointer',
+              fontSize:12,
+            }}
+          >
+            {tema === 'dark' ? 'Claro' : 'Oscuro'}
+          </button>
+        </div>
+        <Outlet />
+      </main>
     </div>
   )
 }

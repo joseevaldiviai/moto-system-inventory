@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import { api } from '../lib/apiClient'
 
 export default function Usuarios() {
   const { token } = useAuthStore()
@@ -10,7 +11,7 @@ export default function Usuarios() {
   const [editPass, setEditPass] = useState('')
 
   const load = async () => {
-    const res = await window.api.listarUsuarios({ token })
+    const res = await api.listarUsuarios({ token })
     if (res.ok) setUsuarios(res.data)
   }
 
@@ -18,7 +19,7 @@ export default function Usuarios() {
 
   const crear = async () => {
     if (!form.nombre || !form.username || !form.password) return toast.error('Completa todos los campos')
-    const res = await window.api.crearUsuario({ token, data: form })
+    const res = await api.crearUsuario({ token, data: form })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Usuario creado')
     setForm({ nombre: '', username: '', password: '', rol: 'CAJERO' })
@@ -28,7 +29,7 @@ export default function Usuarios() {
   const cambiarPassword = async () => {
     if (!editId) return
     if (!editPass) return toast.error('Ingresa una contraseña')
-    const res = await window.api.actualizarUsuario({ token, id: editId, data: { password: editPass } })
+    const res = await api.actualizarUsuario({ token, id: editId, data: { password: editPass } })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Contraseña actualizada')
     setEditId(null)
@@ -37,7 +38,7 @@ export default function Usuarios() {
   }
 
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
     input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-3)', color: 'var(--text)' },
     label: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
@@ -45,16 +46,16 @@ export default function Usuarios() {
   }
 
   return (
-    <div style={S.page}>
-      <div style={{ marginBottom: 18 }}>
+    <div className="page-shell" style={S.page}>
+      <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>USUARIOS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Gestión</h1>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="grid-two">
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Nuevo usuario</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="grid-two-tight">
             <div>
               <div style={S.label}>Nombre</div>
               <input style={S.input} value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
@@ -80,7 +81,7 @@ export default function Usuarios() {
 
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Listado</div>
-          <div style={{ maxHeight: 420, overflow: 'auto' }}>
+          <div className="list-scroll">
             {usuarios.map(u => (
               <div key={u.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
                 <div style={{ fontSize: 12 }}>{u.nombre} · {u.username}</div>
@@ -91,7 +92,7 @@ export default function Usuarios() {
                 {editId === u.id && (
                   <div style={{ marginTop: 8 }}>
                     <div style={S.label}>Nueva contraseña</div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="button-row" style={{ gap: 6 }}>
                       <input type="password" style={S.input} value={editPass} onChange={e => setEditPass(e.target.value)} />
                       <button onClick={cambiarPassword} style={S.btn}>Guardar</button>
                       <button onClick={() => { setEditId(null); setEditPass('') }} style={S.btn}>Cancelar</button>

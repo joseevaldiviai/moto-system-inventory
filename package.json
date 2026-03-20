@@ -2,18 +2,20 @@
   "name": "moto-system",
   "version": "1.0.0",
   "author": "Jose Valdivia Ignacio",
-  "description": "Sistema de gestión para concesionario de motos",
-  "main": "electron/main.js",
+  "description": "Sistema web de gestion para concesionario de motos",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "npm run build && electron-builder --publish=never",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:worker": "wrangler dev",
+    "deploy:worker": "wrangler deploy",
+    "deploy:pages": "vite build"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
-    "pdfkit": "^0.16.0",
+    "@supabase/supabase-js": "^2.52.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-datepicker": "^7.4.0",
@@ -26,31 +28,6 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",
     "vite": "^5.4.10",
-    "electron": "^33.0.2",
-    "electron-builder": "^25.1.7",
-    "concurrently": "^9.1.0",
-    "wait-on": "^8.0.1",
-    "cross-env": "^7.0.3"
-  },
-  "build": {
-    "appId": "com.motosystem.app",
-    "productName": "Moto System",
-    "directories": {
-      "output": "dist-electron"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "node_modules/**/*"
-    ],
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+    "wrangler": "^4.57.1"
   }
 }

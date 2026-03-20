@@ -4,10 +4,11 @@ import inventarioImg from '../images/manual/inventario.png'
 import proformasImg from '../images/manual/proformas.png'
 import reportesImg from '../images/manual/reportes.png'
 import perfilImg from '../images/manual/perfil.png'
+import { api } from '../lib/apiClient'
 
 export default function Manual() {
   const S = {
-    page: { padding: 32, fontFamily: 'Georgia,serif', color: 'var(--text)' },
+    page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
     title: { fontSize: 22, color: 'var(--text-strong)', margin: 0 },
     subtitle: { fontSize: 12, color: 'var(--text-soft)' },
@@ -22,44 +23,44 @@ export default function Manual() {
   }
 
   return (
-    <div style={S.page} className="manual-page">
-      <div style={S.header}>
+    <div style={S.page} className="manual-page page-shell">
+      <div style={{ ...S.header, flexWrap: 'wrap' }}>
         <div>
           <h1 style={S.title}>Manual de Usuario</h1>
           <div style={S.subtitle}>Moto System · Guía detallada de instalación, operación y buenas prácticas</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="button-row">
           <button onClick={() => setTimeout(() => window.print(), 100)} style={S.btn}>Imprimir</button>
           <button onClick={async () => {
-            const res = await window.api.exportManualPdf()
-            if (!res?.ok) return toast.error('No se pudo exportar el PDF')
-            toast.success('PDF exportado')
-          }} style={S.btn}>Exportar PDF</button>
+            const res = await api.exportManualPdf()
+            if (!res?.ok) return toast.error('No se pudo exportar el archivo')
+            toast.success('Archivo exportado')
+          }} style={S.btn}>Exportar archivo</button>
         </div>
       </div>
 
       <div style={S.card}>
         <div style={S.h2}>1. Requisitos del sistema</div>
-        <p style={S.p}>El sistema funciona en Windows y no requiere conexión permanente a internet, ya que toda la información se guarda localmente en el equipo.</p>
+        <p style={S.p}>El sistema funciona en navegador y requiere conexión al servicio desplegado para operar con los datos del negocio.</p>
         <ul style={S.list}>
-          <li>Windows 7/10/11 (64-bit).</li>
-          <li>Mínimo 4 GB de RAM (recomendado 8 GB).</li>
-          <li>Al menos 500 MB libres en disco.</li>
-          <li>No requiere Node.js ni servidores externos.</li>
+          <li>Navegador moderno actualizado.</li>
+          <li>Conexion a internet o red donde este desplegado el sistema.</li>
+          <li>Credenciales de acceso habilitadas.</li>
+          <li>No requiere instalacion de Node.js en el equipo cliente.</li>
         </ul>
-        <p style={S.p}>Si el equipo cumple con los requisitos recomendados, la aplicación será estable incluso con listados grandes y múltiples operaciones diarias.</p>
+        <p style={S.p}>Si el equipo cumple con estos requisitos, la aplicacion puede usarse desde cualquier puesto autorizado.</p>
       </div>
 
       <div style={S.card}>
-        <div style={S.h2}>2. Instalación en Windows</div>
-        <p style={S.p}>La instalación es similar a cualquier software de escritorio. Se recomienda cerrar otras aplicaciones durante la instalación.</p>
+        <div style={S.h2}>2. Acceso al sistema web</div>
+        <p style={S.p}>El acceso se realiza desde una URL publicada. No requiere instalador local.</p>
         <ul style={S.list}>
-          <li>Ejecuta el instalador `moto-system.exe`.</li>
-          <li>Selecciona la carpeta de instalación.</li>
-          <li>Finaliza el asistente y abre la aplicación.</li>
+          <li>Abrir la URL oficial del sistema en el navegador.</li>
+          <li>Iniciar sesion con usuario y contraseña.</li>
+          <li>Trabajar segun permisos del rol asignado.</li>
         </ul>
-        <p style={S.p}>La base de datos se guarda en: `C:\Users\&lt;usuario&gt;\AppData\Roaming\moto-system\moto_system.db`</p>
-        <p style={S.p}>Este archivo contiene inventario, clientes, proformas y ventas. No debe borrarse si se desea conservar la información.</p>
+        <p style={S.p}>La informacion se guarda en la base de datos central del sistema, no en archivos locales del equipo.</p>
+        <p style={S.p}>Los respaldos deben descargarse desde la opcion administrativa correspondiente.</p>
       </div>
 
       <div style={S.card}>
@@ -68,7 +69,7 @@ export default function Manual() {
         <ul style={S.list}>
           <li>Supervisor: administración completa del sistema.</li>
           <li>Cajero: operaciones de ventas y consulta.</li>
-          <li>La sesión se cierra al salir de la aplicación.</li>
+          <li>La sesion puede expirar y renovarse automaticamente segun el tiempo de acceso.</li>
         </ul>
         <p style={S.p}>Se recomienda que cada persona tenga su propio usuario para controlar responsabilidades y auditorías.</p>
       </div>
@@ -104,7 +105,7 @@ export default function Manual() {
         <div style={{ height: 12 }} />
 
         <div style={S.h3}>Reportes</div>
-        <p style={S.p}>Consulta ventas y proformas con filtros y exporta a PDF.</p>
+        <p style={S.p}>Consulta ventas, proformas y tramites con filtros y exporta archivos descargables.</p>
 
         <div style={{ height: 12 }} />
 
@@ -114,11 +115,11 @@ export default function Manual() {
 
       <div style={S.card}>
         <div style={S.h2}>6. Respaldo y recuperación</div>
-        <p style={S.p}>El respaldo se genera desde Perfil → Respaldo de base de datos. Se crea un archivo .db con toda la información.</p>
+        <p style={S.p}>El respaldo se genera desde Perfil → Respaldo de base de datos. Se descarga un archivo .json con la informacion exportada.</p>
         <ul style={S.list}>
           <li>Guardar respaldos en una carpeta externa o en la nube.</li>
           <li>Hacer respaldos semanales y mensuales.</li>
-          <li>Para restaurar, cerrar la app y reemplazar el archivo .db.</li>
+          <li>La restauracion debe hacerse con un proceso administrativo controlado.</li>
         </ul>
       </div>
 
@@ -126,7 +127,7 @@ export default function Manual() {
         <div style={S.h2}>7. Buenas prácticas</div>
         <ul style={S.list}>
           <li>No compartir usuarios entre personas.</li>
-          <li>Evitar cerrar la app durante guardados o exportaciones.</li>
+          <li>Evitar cerrar el navegador durante guardados o exportaciones.</li>
           <li>Revisar fechas límite de proformas.</li>
           <li>Mantener inventario actualizado para evitar ventas sin stock.</li>
         </ul>
@@ -135,9 +136,9 @@ export default function Manual() {
       <div style={S.card}>
         <div style={S.h2}>8. Preguntas frecuentes</div>
         <ul style={S.list}>
-          <li>¿Se puede usar sin internet? Sí, toda la información es local.</li>
-          <li>¿Qué pasa si cierro la app? La sesión se cierra automáticamente.</li>
-          <li>¿Se puede imprimir una proforma? Sí, desde el detalle.</li>
+          <li>¿Se puede usar sin internet? No en el modo web desplegado.</li>
+          <li>¿Qué pasa si cierro el navegador? La sesion puede reanudarse si sigue vigente.</li>
+          <li>¿Se puede exportar una proforma? Si, desde el detalle.</li>
           <li>¿Qué pasa si una proforma vence? Se marca como vencida y libera stock.</li>
         </ul>
       </div>
