@@ -79,26 +79,33 @@ async function refreshSession() {
 }
 
 async function request(path, options = {}) {
-  let token = options.token;
-  let sessionId = options.sessionId;
-  let { response, payload } = await rawRequest(path, { ...options, token, sessionId });
+  try {
+    let token = options.token;
+    let sessionId = options.sessionId;
+    let { response, payload } = await rawRequest(path, { ...options, token, sessionId });
 
-  if (response.status === 401 && token) {
-    const newToken = await refreshSession();
-    if (newToken) {
-      token = newToken;
-      sessionId = getStoredSession().sessionId;
-      ({ response, payload } = await rawRequest(path, { ...options, token: newToken, sessionId }));
+    if (response.status === 401 && token) {
+      const newToken = await refreshSession();
+      if (newToken) {
+        token = newToken;
+        sessionId = getStoredSession().sessionId;
+        ({ response, payload } = await rawRequest(path, { ...options, token: newToken, sessionId }));
+      }
     }
-  }
 
-  if (response.status === 401) {
-    clearSession();
-  }
+    if (response.status === 401) {
+      clearSession();
+    }
 
-  if (!response.ok && payload) return payload;
-  if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-  return payload;
+    if (!response.ok && payload) return payload;
+    if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+    return payload;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'No se pudo conectar con la API',
+    };
+  }
 }
 
 async function download(path, { token, filename } = {}) {
