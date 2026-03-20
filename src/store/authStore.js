@@ -105,7 +105,7 @@ const useAuthStore = create((set, get) => ({
         clearSession()
         set({ token: null, refreshToken: null, sessionId: null, usuario: null, tema: getThemeForUser(null), authReady: true })
       }
-    }, 15000)
+    }, 60000)
 
     return () => {
       window.clearInterval(intervalId)

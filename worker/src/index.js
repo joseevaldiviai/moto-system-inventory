@@ -1208,12 +1208,13 @@ function notMigrated(name) {
 
 export default {
   async fetch(request, env) {
-    if (request.method === 'OPTIONS') return empty();
-
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, '') || '/';
-
     try {
+      if (request.method === 'OPTIONS') return empty();
+
+      const url = new URL(request.url);
+      const path = url.pathname.replace(/\/+$/, '') || '/';
+
+      try {
       if (path === '/health' && request.method === 'GET') return json({ ok: true, service: 'moto-system-api' });
 
       if (path === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
@@ -1288,8 +1289,24 @@ export default {
       }
 
       return notFound();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = message === 'Se requiere rol de Supervisor'
+          ? 403
+          : (
+              message.includes('Sesion')
+              || message.includes('Usuario no autorizado')
+              || message.includes('La sesion fue reemplazada')
+            )
+            ? 401
+            : 500;
+
+        console.error('Worker request error', { path, message });
+        return fail(error, status);
+      }
     } catch (error) {
-      return fail(error, error.message === 'Se requiere rol de Supervisor' ? 403 : 401);
+      console.error('Worker fatal error', error);
+      return fail(error, 500);
     }
   },
 };
