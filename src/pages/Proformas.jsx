@@ -12,15 +12,40 @@ export default function Proformas() {
   const [repuestos, setRepuestos] = useState([])
   const [items, setItems] = useState([])
   const [cliente, setCliente] = useState({ nombre: '', ci_nit: '', celular: '' })
-  const [itemForm, setItemForm] = useState({ tipo: 'moto', producto_id: '', cantidad: 1, descuento_pct: 0 })
+  const [itemForm, setItemForm] = useState({ producto: 'moto', marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })
   const [fechaLimite, setFechaLimite] = useState('')
+  const [filtroProformas, setFiltroProformas] = useState({ fecha: '', numero: '' })
   const [detalle, setDetalle] = useState(null)
   const [detalleLoading, setDetalleLoading] = useState(false)
   const [printLoading, setPrintLoading] = useState(false)
 
+  const loadCatalogos = async () => {
+    const [m, a, r] = await Promise.all([
+      api.listarMotos({ token }),
+      api.listarAccesorios({ token }),
+      api.listarRepuestos({ token }),
+    ])
+    if (m.ok) setMotos(m.data)
+    if (a.ok) setAccesorios(a.data)
+    if (r.ok) setRepuestos(r.data)
+  }
+
+  const loadProformas = async (filters = filtroProformas) => {
+    const p = await api.listarProformas({
+      token,
+      fecha: filters.fecha || undefined,
+      numero: filters.numero || undefined,
+    })
+    if (p.ok) setProformas(p.data)
+  }
+
   const load = async () => {
     const [p, m, a, r] = await Promise.all([
-      api.listarProformas({ token }),
+      api.listarProformas({
+        token,
+        fecha: filtroProformas.fecha || undefined,
+        numero: filtroProformas.numero || undefined,
+      }),
       api.listarMotos({ token }),
       api.listarAccesorios({ token }),
       api.listarRepuestos({ token }),
@@ -32,14 +57,18 @@ export default function Proformas() {
   }
 
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (!token) return
+    loadProformas()
+  }, [token, filtroProformas.fecha, filtroProformas.numero])
 
-  const productoLabel = (tipo, id) => {
+  const productoLabel = (producto, id) => {
     if (!id) return ''
-    if (tipo === 'moto') {
+    if (producto === 'moto') {
       const p = motos.find(m => m.id === id)
       return p ? `${p.marca} ${p.ano ?? p.modelo}`.trim() : ''
     }
-    if (tipo === 'accesorio') {
+    if (producto === 'accesorio') {
       const p = accesorios.find(a => a.id === id)
       return p ? `${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
     }
@@ -47,30 +76,50 @@ export default function Proformas() {
     return p ? `${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
   }
 
-  const getProducto = (tipo, id) => {
+  const getProducto = (producto, id) => {
     if (!id) return null
-    if (tipo === 'moto') return motos.find(m => m.id === id) || null
-    if (tipo === 'accesorio') return accesorios.find(a => a.id === id) || null
+    if (producto === 'moto') return motos.find(m => m.id === id) || null
+    if (producto === 'accesorio') return accesorios.find(a => a.id === id) || null
     return repuestos.find(r => r.id === id) || null
+  }
+
+  const catalogoActual = itemForm.producto === 'moto'
+    ? motos
+    : itemForm.producto === 'accesorio'
+      ? accesorios
+      : repuestos
+
+  const marcasDisponibles = [...new Set(catalogoActual.map((p) => p.marca).filter(Boolean))].sort()
+  const productosPorMarca = catalogoActual.filter((p) => !itemForm.marca || p.marca === itemForm.marca)
+  const tiposDisponibles = [...new Set(productosPorMarca.map((p) => p.tipo).filter(Boolean))].sort()
+  const productosPorTipo = productosPorMarca.filter((p) => !itemForm.tipo || p.tipo === itemForm.tipo)
+  const cilindradasDisponibles = itemForm.producto === 'moto'
+    ? [...new Set(productosPorTipo.map((p) => p.cilindrada).filter(Boolean))].sort()
+    : []
+  const productosFiltrados = productosPorTipo.filter((p) => itemForm.producto !== 'moto' || !itemForm.cilindrada || p.cilindrada === itemForm.cilindrada)
+
+  const formatProductoOption = (producto) => {
+    if (itemForm.producto === 'moto') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
+    return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
   }
 
   const addItem = () => {
     if (!itemForm.producto_id) return toast.error('Selecciona un producto')
     const productoId = Number(itemForm.producto_id)
-    const producto = getProducto(itemForm.tipo, productoId)
+    const producto = getProducto(itemForm.producto, productoId)
     const payload = {
       cantidad: Number(itemForm.cantidad || 1),
       descuento_pct: Number(itemForm.descuento_pct || 0),
-      descripcion: productoLabel(itemForm.tipo, productoId),
+      descripcion: productoLabel(itemForm.producto, productoId),
       _descuento_maximo: producto?.descuento_maximo_pct ?? null,
       _edit: false,
     }
-    if (itemForm.tipo === 'moto') payload.moto_id = productoId
-    if (itemForm.tipo === 'accesorio') payload.accesorio_id = productoId
-    if (itemForm.tipo === 'repuesto') payload.repuesto_id = productoId
+    if (itemForm.producto === 'moto') payload.moto_id = productoId
+    if (itemForm.producto === 'accesorio') payload.accesorio_id = productoId
+    if (itemForm.producto === 'repuesto') payload.repuesto_id = productoId
 
     setItems(prev => [...prev, payload])
-    setItemForm({ ...itemForm, producto_id: '' })
+    setItemForm((current) => ({ ...current, producto_id: '', cantidad: 1, descuento_pct: 0 }))
   }
 
   const crearProforma = async () => {
@@ -93,14 +142,15 @@ export default function Proformas() {
     setItems([])
     setCliente({ nombre: '', ci_nit: '', celular: '' })
     setFechaLimite('')
-    load()
+    loadProformas()
+    loadCatalogos()
   }
 
   const cancelar = async (id) => {
     const res = await api.cancelarProforma({ token, id })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Proforma cancelada')
-    load()
+    loadProformas()
   }
 
   const verProforma = async (id) => {
@@ -149,8 +199,6 @@ export default function Proformas() {
     td: { borderBottom: '1px solid var(--divider)', padding: '6px 4px', color: 'var(--text-dim)' },
   }
 
-  const productos = itemForm.tipo === 'moto' ? motos : itemForm.tipo === 'accesorio' ? accesorios : repuestos
-
   return (
     <div className="page-shell" style={S.page}>
       <div className="page-header">
@@ -187,21 +235,67 @@ export default function Proformas() {
 
           <div className="grid-four" style={{ marginTop: 12 }}>
             <div>
-              <div style={S.label}>Tipo</div>
-              <select style={S.input} value={itemForm.tipo} onChange={e => setItemForm(f => ({ ...f, tipo: e.target.value }))}>
+              <div style={S.label}>Producto</div>
+              <select
+                style={S.input}
+                value={itemForm.producto}
+                onChange={e => setItemForm({ producto: e.target.value, marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })}
+              >
                 <option value="moto">Moto</option>
                 <option value="accesorio">Accesorio</option>
                 <option value="repuesto">Repuesto</option>
               </select>
             </div>
             <div>
-              <div style={S.label}>Producto</div>
-              <select style={S.input} value={itemForm.producto_id} onChange={e => setItemForm(f => ({ ...f, producto_id: e.target.value }))}>
+              <div style={S.label}>Marca</div>
+              <select
+                style={S.input}
+                value={itemForm.marca}
+                onChange={e => setItemForm(f => ({ ...f, marca: e.target.value, tipo: '', cilindrada: '', producto_id: '' }))}
+              >
                 <option value="">Selecciona</option>
-                {productos.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {itemForm.tipo === 'moto' ? `${p.marca} ${p.ano ?? p.modelo}` : `${p.tipo} ${p.marca ? '· ' + p.marca : ''}`}
-                  </option>
+                {marcasDisponibles.map((marca) => (
+                  <option key={marca} value={marca}>{marca}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Tipo</div>
+              <select
+                style={S.input}
+                value={itemForm.tipo}
+                onChange={e => setItemForm(f => ({ ...f, tipo: e.target.value, cilindrada: '', producto_id: '' }))}
+              >
+                <option value="">Selecciona</option>
+                {tiposDisponibles.map((tipo) => (
+                  <option key={tipo} value={tipo}>{tipo}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Cilindrada</div>
+              <select
+                style={S.input}
+                value={itemForm.cilindrada}
+                disabled={itemForm.producto !== 'moto'}
+                onChange={e => setItemForm(f => ({ ...f, cilindrada: e.target.value, producto_id: '' }))}
+              >
+                <option value="">{itemForm.producto === 'moto' ? 'Selecciona' : 'No aplica'}</option>
+                {cilindradasDisponibles.map((cilindrada) => (
+                  <option key={cilindrada} value={cilindrada}>{cilindrada}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Opción</div>
+              <select
+                style={S.input}
+                value={itemForm.producto_id}
+                onChange={e => setItemForm(f => ({ ...f, producto_id: e.target.value }))}
+              >
+                <option value="">Selecciona</option>
+                {productosFiltrados.map((producto) => (
+                  <option key={producto.id} value={producto.id}>{formatProductoOption(producto)}</option>
                 ))}
               </select>
             </div>
@@ -215,7 +309,7 @@ export default function Proformas() {
                 style={S.input}
                 type="number"
                 min="0"
-                max={getProducto(itemForm.tipo, Number(itemForm.producto_id))?.descuento_maximo_pct ?? undefined}
+                max={getProducto(itemForm.producto, Number(itemForm.producto_id))?.descuento_maximo_pct ?? undefined}
                 value={itemForm.descuento_pct}
                 onChange={e => setItemForm(f => ({ ...f, descuento_pct: e.target.value }))} />
             </div>
@@ -269,6 +363,26 @@ export default function Proformas() {
 
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Proformas recientes</div>
+          <div className="grid-two-tight" style={{ marginBottom: 10 }}>
+            <div>
+              <div style={S.label}>Número</div>
+              <input
+                style={S.input}
+                placeholder="PRO-2026-0001"
+                value={filtroProformas.numero}
+                onChange={e => setFiltroProformas(f => ({ ...f, numero: e.target.value }))}
+              />
+            </div>
+            <div>
+              <div style={S.label}>Fecha</div>
+              <DatePickerInput
+                value={filtroProformas.fecha}
+                onChange={(value) => setFiltroProformas(f => ({ ...f, fecha: value }))}
+                placeholder="YYYY-MM-DD"
+                inputStyle={S.input}
+              />
+            </div>
+          </div>
           <div className="list-scroll">
             {proformas.map(p => (
               <div key={p.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
@@ -282,6 +396,9 @@ export default function Proformas() {
                 </div>
               </div>
             ))}
+            {proformas.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', paddingTop: 8 }}>No hay proformas que coincidan con la búsqueda</div>
+            )}
           </div>
 
           <div style={{ marginTop: 12, borderTop: '1px solid var(--divider)', paddingTop: 12 }}>

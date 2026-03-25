@@ -6,14 +6,29 @@ import { api } from '../lib/apiClient'
 export default function Ventas() {
   const { token } = useAuthStore()
   const [proformas, setProformas] = useState([])
+  const [motos, setMotos] = useState([])
+  const [accesorios, setAccesorios] = useState([])
+  const [repuestos, setRepuestos] = useState([])
+  const [items, setItems] = useState([])
+  const [cliente, setCliente] = useState({ nombre: '', ci_nit: '', celular: '' })
+  const [itemForm, setItemForm] = useState({ producto: 'moto', marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })
   const [detail, setDetail] = useState(null)
   const [tramites, setTramites] = useState({})
   const [costos, setCostos] = useState({ bsisa: 0, placa: 0 })
+
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   const load = async () => {
-    const res = await api.listarProformas({ token, estado: 'ACTIVA' })
-    if (res.ok) setProformas(res.data)
+    const [p, m, a, r] = await Promise.all([
+      api.listarProformas({ token, estado: 'ACTIVA' }),
+      api.listarMotos({ token }),
+      api.listarAccesorios({ token }),
+      api.listarRepuestos({ token }),
+    ])
+    if (p.ok) setProformas(p.data)
+    if (m.ok) setMotos(m.data)
+    if (a.ok) setAccesorios(a.data)
+    if (r.ok) setRepuestos(r.data)
   }
 
   useEffect(() => { load() }, [])
@@ -27,6 +42,131 @@ export default function Ventas() {
       })
     })
   }, [token])
+
+  const catalogoActual = itemForm.producto === 'moto'
+    ? motos
+    : itemForm.producto === 'accesorio'
+      ? accesorios
+      : repuestos
+
+  const marcasDisponibles = [...new Set(catalogoActual.map((p) => p.marca).filter(Boolean))].sort()
+  const productosPorMarca = catalogoActual.filter((p) => !itemForm.marca || p.marca === itemForm.marca)
+  const tiposDisponibles = [...new Set(productosPorMarca.map((p) => p.tipo).filter(Boolean))].sort()
+  const productosPorTipo = productosPorMarca.filter((p) => !itemForm.tipo || p.tipo === itemForm.tipo)
+  const cilindradasDisponibles = itemForm.producto === 'moto'
+    ? [...new Set(productosPorTipo.map((p) => p.cilindrada).filter(Boolean))].sort()
+    : []
+  const productosFiltrados = productosPorTipo.filter((p) => itemForm.producto !== 'moto' || !itemForm.cilindrada || p.cilindrada === itemForm.cilindrada)
+
+  const getProducto = (producto, id) => {
+    if (!id) return null
+    if (producto === 'moto') return motos.find(m => m.id === id) || null
+    if (producto === 'accesorio') return accesorios.find(a => a.id === id) || null
+    return repuestos.find(r => r.id === id) || null
+  }
+
+  const productoLabel = (producto, id) => {
+    const selected = getProducto(producto, id)
+    if (!selected) return ''
+    if (producto === 'moto') return `${selected.marca} ${selected.ano ?? selected.modelo}`.trim()
+    return `${selected.marca ? `${selected.marca} ` : ''}${selected.tipo}`.trim()
+  }
+
+  const formatProductoOption = (producto) => {
+    if (itemForm.producto === 'moto') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
+    return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
+  }
+
+  const addItem = () => {
+    if (!itemForm.producto_id) return toast.error('Selecciona un producto')
+    const productoId = Number(itemForm.producto_id)
+    const producto = getProducto(itemForm.producto, productoId)
+    const payload = {
+      cantidad: Number(itemForm.cantidad || 1),
+      descuento_pct: Number(itemForm.descuento_pct || 0),
+      descripcion: productoLabel(itemForm.producto, productoId),
+      _descuento_maximo: producto?.descuento_maximo_pct ?? null,
+      _tipo_producto: itemForm.producto,
+      _tramites: { bsisa: false, placa: false },
+    }
+    if (itemForm.producto === 'moto') payload.moto_id = productoId
+    if (itemForm.producto === 'accesorio') payload.accesorio_id = productoId
+    if (itemForm.producto === 'repuesto') payload.repuesto_id = productoId
+
+    setItems(prev => [...prev, payload])
+    setItemForm(current => ({ ...current, producto_id: '', cantidad: 1, descuento_pct: 0 }))
+  }
+
+  const updateItem = (idx, patch) => {
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it))
+  }
+
+  const removeItem = (idx) => {
+    setItems(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const toggleDirectSaleTramite = (idx, tipo) => {
+    setItems(prev => prev.map((item, index) => (
+      index === idx
+        ? { ...item, _tramites: { ...item._tramites, [tipo]: !item._tramites?.[tipo] } }
+        : item
+    )))
+  }
+
+  const getUnitSalePrice = (item) => {
+    const productId = item.moto_id || item.accesorio_id || item.repuesto_id
+    const producto = getProducto(item._tipo_producto, productId)
+    if (!producto) return 0
+    const baseSalePrice = producto.precio_venta ?? producto.precio_final ?? 0
+    const descuento = (Number(baseSalePrice) * Number(item.descuento_pct || 0)) / 100
+    return Number(baseSalePrice) - descuento
+  }
+
+  const totalDirecto = () => items.reduce((sum, item) => sum + (getUnitSalePrice(item) * Number(item.cantidad || 1)), 0)
+  const totalTramitesDirecto = () => items.reduce((sum, item) => (
+    sum
+    + (item._tramites?.bsisa ? costos.bsisa : 0)
+    + (item._tramites?.placa ? costos.placa : 0)
+  ), 0)
+
+  const crearVentaDirecta = async () => {
+    if (!cliente.nombre || !cliente.ci_nit || !cliente.celular) return toast.error('Completa datos del cliente')
+    if (!items.length) return toast.error('Agrega al menos un item')
+
+    const payloadItems = items.map((item) => {
+      const payload = {
+        cantidad: Number(item.cantidad || 1),
+        descuento_pct: Number(item.descuento_pct || 0),
+        descripcion: item.descripcion,
+      }
+      if (item.moto_id) payload.moto_id = item.moto_id
+      if (item.accesorio_id) payload.accesorio_id = item.accesorio_id
+      if (item.repuesto_id) payload.repuesto_id = item.repuesto_id
+      if (item.moto_id) {
+        const tramites = []
+        if (item._tramites?.bsisa) tramites.push('BSISA')
+        if (item._tramites?.placa) tramites.push('PLACA')
+        payload.tramites = tramites
+      }
+      return payload
+    })
+
+    const res = await api.crearVenta({
+      token,
+      data: {
+        cliente_nombre: cliente.nombre,
+        cliente_ci_nit: cliente.ci_nit,
+        cliente_celular: cliente.celular,
+        items: payloadItems,
+      },
+    })
+    if (!res.ok) return toast.error(res.error || 'Error')
+
+    toast.success('Venta registrada')
+    setItems([])
+    setCliente({ nombre: '', ci_nit: '', celular: '' })
+    load()
+  }
 
   const openDetail = async (id) => {
     const res = await api.obtenerProforma({ token, id })
@@ -58,7 +198,7 @@ export default function Ventas() {
 
   const tramitesTotal = () => {
     let total = 0
-    for (const [piId, flags] of Object.entries(tramites)) {
+    for (const flags of Object.values(tramites)) {
       if (flags.bsisa) total += costos.bsisa
       if (flags.placa) total += costos.placa
     }
@@ -68,6 +208,8 @@ export default function Ventas() {
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
+    input: { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-3)', color: 'var(--text)' },
+    label: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
     btn: { padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12 },
   }
 
@@ -75,22 +217,167 @@ export default function Ventas() {
     <div className="page-shell" style={S.page}>
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>VENTAS</div>
-        <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Consolidar proformas</h1>
+        <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Venta directa y desde proformas</h1>
       </div>
 
-      <div style={S.card}>
-        {proformas.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)' }}>No hay proformas activas</div>
-        ) : proformas.map(p => (
-          <div key={p.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
-            <div style={{ fontSize: 12 }}>{p.codigo} · {p.cliente_nombre}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>Total {p.total} · {p.fecha_creacion}</div>
-            <div className="button-row" style={{ marginTop: 6 }}>
-              <button onClick={() => openDetail(p.id)} style={S.btn}>Ver items</button>
-              <button onClick={() => consolidar(p.id)} style={S.btn}>Consolidar venta</button>
+      <div className="grid-main-two">
+        <div style={S.card}>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Venta directa</div>
+          <div className="grid-three">
+            <div>
+              <div style={S.label}>Cliente</div>
+              <input style={S.input} value={cliente.nombre} onChange={e => setCliente(c => ({ ...c, nombre: e.target.value }))} />
+            </div>
+            <div>
+              <div style={S.label}>CI / NIT</div>
+              <input style={S.input} value={cliente.ci_nit} onChange={e => setCliente(c => ({ ...c, ci_nit: e.target.value }))} />
+            </div>
+            <div>
+              <div style={S.label}>Celular</div>
+              <input style={S.input} value={cliente.celular} onChange={e => setCliente(c => ({ ...c, celular: e.target.value }))} />
             </div>
           </div>
-        ))}
+
+          <div className="grid-four" style={{ marginTop: 12 }}>
+            <div>
+              <div style={S.label}>Producto</div>
+              <select
+                style={S.input}
+                value={itemForm.producto}
+                onChange={e => setItemForm({ producto: e.target.value, marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })}
+              >
+                <option value="moto">Moto</option>
+                <option value="accesorio">Accesorio</option>
+                <option value="repuesto">Repuesto</option>
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Marca</div>
+              <select
+                style={S.input}
+                value={itemForm.marca}
+                onChange={e => setItemForm(f => ({ ...f, marca: e.target.value, tipo: '', cilindrada: '', producto_id: '' }))}
+              >
+                <option value="">Selecciona</option>
+                {marcasDisponibles.map((marca) => (
+                  <option key={marca} value={marca}>{marca}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Tipo</div>
+              <select
+                style={S.input}
+                value={itemForm.tipo}
+                onChange={e => setItemForm(f => ({ ...f, tipo: e.target.value, cilindrada: '', producto_id: '' }))}
+              >
+                <option value="">Selecciona</option>
+                {tiposDisponibles.map((tipo) => (
+                  <option key={tipo} value={tipo}>{tipo}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Cilindrada</div>
+              <select
+                style={S.input}
+                value={itemForm.cilindrada}
+                disabled={itemForm.producto !== 'moto'}
+                onChange={e => setItemForm(f => ({ ...f, cilindrada: e.target.value, producto_id: '' }))}
+              >
+                <option value="">{itemForm.producto === 'moto' ? 'Selecciona' : 'No aplica'}</option>
+                {cilindradasDisponibles.map((cilindrada) => (
+                  <option key={cilindrada} value={cilindrada}>{cilindrada}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Opción</div>
+              <select
+                style={S.input}
+                value={itemForm.producto_id}
+                onChange={e => setItemForm(f => ({ ...f, producto_id: e.target.value }))}
+              >
+                <option value="">Selecciona</option>
+                {productosFiltrados.map((producto) => (
+                  <option key={producto.id} value={producto.id}>{formatProductoOption(producto)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={S.label}>Cantidad</div>
+              <input style={S.input} type="number" value={itemForm.cantidad} onChange={e => setItemForm(f => ({ ...f, cantidad: e.target.value }))} />
+            </div>
+            <div>
+              <div style={S.label}>Desc %</div>
+              <input
+                style={S.input}
+                type="number"
+                min="0"
+                max={getProducto(itemForm.producto, Number(itemForm.producto_id))?.descuento_maximo_pct ?? undefined}
+                value={itemForm.descuento_pct}
+                onChange={e => setItemForm(f => ({ ...f, descuento_pct: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className="button-row" style={{ marginTop: 10 }}>
+            <button onClick={addItem} style={S.btn}>Agregar item</button>
+            <button onClick={crearVentaDirecta} style={S.btn}>Registrar venta</button>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 8 }}>Items de la venta</div>
+            {items.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)' }}>Sin items</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {items.map((item, idx) => (
+                  <div key={idx} style={{ border: '1px solid var(--divider)', borderRadius: 8, padding: 10 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-strong)' }}>{item.descripcion}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>
+                      Cantidad {item.cantidad} · Desc {item.descuento_pct}% · Subtotal {formatBs(getUnitSalePrice(item) * Number(item.cantidad || 1))}
+                    </div>
+                    {item.moto_id ? (
+                      <div className="button-row" style={{ gap: 12, marginTop: 8, fontSize: 12 }}>
+                        <label>
+                          <input type="checkbox" checked={!!item._tramites?.bsisa} onChange={() => toggleDirectSaleTramite(idx, 'bsisa')} /> BSISA (+{formatBs(costos.bsisa)})
+                        </label>
+                        <label>
+                          <input type="checkbox" checked={!!item._tramites?.placa} onChange={() => toggleDirectSaleTramite(idx, 'placa')} /> PLACA (+{formatBs(costos.placa)})
+                        </label>
+                      </div>
+                    ) : null}
+                    <div className="button-row" style={{ marginTop: 8 }}>
+                      <button onClick={() => removeItem(idx)} style={S.btn}>Quitar</button>
+                      <button onClick={() => updateItem(idx, { descripcion: item.descripcion })} style={{ ...S.btn, opacity: 0.6 }} disabled>Item listo</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-faint)' }}>
+            Subtotal venta: {formatBs(totalDirecto())} · Trámites: {formatBs(totalTramitesDirecto())} · Total final: {formatBs(totalDirecto() + totalTramitesDirecto())}
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Proformas activas</div>
+          {proformas.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)' }}>No hay proformas activas</div>
+          ) : proformas.map(p => (
+            <div key={p.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
+              <div style={{ fontSize: 12 }}>{p.codigo} · {p.cliente_nombre}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>Total {p.total} · {p.fecha_creacion}</div>
+              <div className="button-row" style={{ marginTop: 6 }}>
+                <button onClick={() => openDetail(p.id)} style={S.btn}>Ver items</button>
+                <button onClick={() => consolidar(p.id)} style={S.btn}>Consolidar venta</button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {detail && (

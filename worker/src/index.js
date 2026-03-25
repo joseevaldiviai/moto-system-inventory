@@ -715,6 +715,8 @@ async function handleQuotesList(request, env) {
 
   const url = new URL(request.url);
   const estado = url.searchParams.get('estado');
+  const fecha = url.searchParams.get('fecha');
+  const numero = url.searchParams.get('numero');
 
   let query = admin
     .from('proformas')
@@ -722,6 +724,12 @@ async function handleQuotesList(request, env) {
     .order('fecha_creacion', { ascending: false });
 
   if (estado) query = query.eq('estado', estado);
+  if (fecha) {
+    query = query
+      .gte('fecha_creacion', `${fecha}T00:00:00`)
+      .lte('fecha_creacion', `${fecha}T23:59:59`);
+  }
+  if (numero) query = query.ilike('codigo', `%${numero}%`);
 
   const { data, error } = await query;
   if (error) return fail(error.message, 500);
@@ -851,7 +859,17 @@ async function handleSalesCreate(request, env) {
   const { data } = await readJson(request);
 
   if (!data.proforma_id) {
-    return fail('La venta directa aun no fue migrada; use una proforma activa');
+    const { data: createdId, error } = await admin.rpc('create_direct_sale', {
+      p_vendedor_id: profile.id,
+      p_cliente_nombre: data.cliente_nombre,
+      p_cliente_ci_nit: data.cliente_ci_nit,
+      p_cliente_celular: data.cliente_celular,
+      p_items: data.items,
+      p_notas: data.notas ?? null,
+    });
+
+    if (error) return fail(error.message);
+    return json({ ok: true, data: { id: createdId } });
   }
 
   const { data: createdId, error } = await admin.rpc('create_sale_from_proforma', {

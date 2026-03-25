@@ -247,9 +247,11 @@ export const api = {
   crearTramite: ({ token, data }) => request('/tramites', { method: 'POST', token, body: { data } }),
   actualizarTramite: ({ token, id, data }) => request(`/tramites/${id}`, { method: 'PATCH', token, body: { data } }),
 
-  listarProformas: ({ token, estado } = {}) => {
+  listarProformas: ({ token, estado, fecha, numero } = {}) => {
     const query = new URLSearchParams();
     if (estado) query.set('estado', estado);
+    if (fecha) query.set('fecha', fecha);
+    if (numero) query.set('numero', numero);
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/quotes${suffix}`, { token });
   },
