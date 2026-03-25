@@ -19,6 +19,7 @@ export default function Inventario() {
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
   const tabs = [
     { id: 'motos', label: 'Motos' },
+    { id: 'motos_e', label: 'Motos-E' },
     { id: 'accesorios', label: 'Accesorios' },
     { id: 'repuestos', label: 'Repuestos' },
     ...(isSup ? [{ id: 'marcas', label: 'Marcas' }] : []),
@@ -29,6 +30,7 @@ export default function Inventario() {
     try {
       let res
       if (tab === 'motos') res = await api.listarMotos({ token })
+      if (tab === 'motos_e') res = await api.listarMotosE({ token })
       if (tab === 'accesorios') res = await api.listarAccesorios({ token })
       if (tab === 'repuestos') res = await api.listarRepuestos({ token })
       if (tab === 'marcas') res = await api.listarMarcas({ token })
@@ -63,6 +65,7 @@ export default function Inventario() {
     try {
       let res
       if (tab === 'motos') res = await api.crearMoto({ token, data: form })
+      if (tab === 'motos_e') res = await api.crearMotoE({ token, data: form })
       if (tab === 'accesorios') res = await api.crearAccesorio({ token, data: form })
       if (tab === 'repuestos') res = await api.crearRepuesto({ token, data: form })
       if (!res?.ok) return toast.error(res?.error || 'Error al crear')
@@ -92,6 +95,7 @@ export default function Inventario() {
     try {
       let res
       if (tab === 'motos') res = await api.importarMotosCsv({ token, csvText })
+      if (tab === 'motos_e') res = await api.importarMotosECsv({ token, csvText })
       if (tab === 'accesorios') res = await api.importarAccesoriosCsv({ token, csvText })
       if (tab === 'repuestos') res = await api.importarRepuestosCsv({ token, csvText })
       if (!res?.ok) return toast.error(res?.error || 'Error al importar')
@@ -107,6 +111,7 @@ export default function Inventario() {
   const handleExport = async () => {
     let res
     if (tab === 'motos') res = await api.exportarMotosArchivo({ token })
+    if (tab === 'motos_e') res = await api.exportarMotosEArchivo({ token })
     if (tab === 'accesorios') res = await api.exportarAccesoriosArchivo({ token })
     if (tab === 'repuestos') res = await api.exportarRepuestosArchivo({ token })
     if (!res?.ok) return
@@ -141,8 +146,13 @@ export default function Inventario() {
 
   const fieldsByTab = {
     motos: [
-      ['marca_id','Marca','marca'],['modelo','Modelo'],['tipo','Tipo'],['color','Color'],['chasis','Chasis'],
-      ['cilindrada','Cilindrada'],['motor','Motor'],['precio','Precio'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Tipo'],['color','Color'],['chasis','Chasis'],
+      ['cilindrada','Cilindrada'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
+      ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
+    ],
+    motos_e: [
+      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Tipo'],['color','Color'],['chasis','Chasis'],
+      ['potencia','Potencia'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     accesorios: [
@@ -157,8 +167,12 @@ export default function Inventario() {
 
   const sampleCsvByTab = {
     motos: [
-      'marca,modelo,tipo,color,chasis,cilindrada,motor,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'Honda,CBR 500R,Deportiva,Rojo,CHS-0001,500,4T,5000,6200,10,3'
+      'marca,ano,tipo,color,chasis,cilindrada,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre',
+      'Honda,2025,Deportiva,Rojo,CHS-0001,500,4T,5000,6200,10,3'
+    ].join('\n'),
+    motos_e: [
+      'marca,ano,tipo,color,chasis,potencia,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre',
+      'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2'
     ].join('\n'),
     accesorios: [
       'marca,tipo,color,precio,precio_final,descuento_maximo_pct,cantidad_libre',
@@ -232,17 +246,19 @@ export default function Inventario() {
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Producto</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
-                      <th style={{ padding: '6px 4px' }}>Precio</th>
+                      <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>
-                          {tab === 'motos' ? `${it.marca} ${it.modelo} (${it.chasis})` : `${it.tipo} ${it.marca ? '· ' + it.marca : ''}`}
+                          {(tab === 'motos' || tab === 'motos_e')
+                            ? `${it.marca} ${it.ano} (${it.chasis})`
+                            : `${it.tipo} ${it.marca ? '· ' + it.marca : ''}`}
                         </td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
-                        <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_final)}</td>
+                        <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -287,7 +303,7 @@ export default function Inventario() {
                             value={form[key] ?? ''}
                             onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                           >
-                            {tab !== 'motos' && <option value="">— Sin marca —</option>}
+                            {tab !== 'motos' && tab !== 'motos_e' && <option value="">— Sin marca —</option>}
                             {marcas.filter(m => m.activo).map(m => (
                               <option key={m.id} value={m.id}>{m.nombre}</option>
                             ))}

@@ -126,7 +126,7 @@ begin
     codigo, proforma_id, vendedor_id, cliente_nombre, cliente_ci_nit,
     cliente_celular, subtotal, total_descuentos, total, notas
   ) values (
-    v_codigo, v_proforma.id, p_vendedor_id, v_proforma.cliente_nombre, v_proforma.cliente_ci_nit,
+    v_codigo, v_proforma.id, v_proforma.vendedor_id, v_proforma.cliente_nombre, v_proforma.cliente_ci_nit,
     v_proforma.cliente_celular, v_proforma.subtotal, v_proforma.total_descuentos, v_proforma.total,
     coalesce(p_notas, v_proforma.notas)
   )

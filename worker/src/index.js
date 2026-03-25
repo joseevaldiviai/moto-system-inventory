@@ -212,10 +212,19 @@ async function handleUsersCreate(request, env) {
   const { admin } = await requireSupervisor(request, env);
   const { data } = await readJson(request);
 
-  const email = data.email || `${data.username}@motosystem.local`;
+  const nombre = data?.nombre?.trim();
+  const username = data?.username?.trim();
+  const password = data?.password;
+  const rol = data?.rol;
+
+  if (!nombre || !username || !password || !rol) {
+    return fail('nombre, username, password y rol son requeridos');
+  }
+
+  const email = data.email || `${username}@motosystem.local`;
   const { data: authUser, error: authError } = await admin.auth.admin.createUser({
     email,
-    password: data.password,
+    password,
     email_confirm: true,
   });
   if (authError || !authUser?.user) return fail(authError?.message || 'No se pudo crear el usuario');
@@ -225,15 +234,18 @@ async function handleUsersCreate(request, env) {
     .insert({
       id: authUser.user.id,
       email,
-      username: data.username,
-      nombre: data.nombre,
-      rol: data.rol,
+      username,
+      nombre,
+      rol,
       activo: true,
     })
     .select('id')
     .single();
 
-  if (profileError) return fail(profileError.message);
+  if (profileError) {
+    await admin.auth.admin.deleteUser(authUser.user.id);
+    return fail(profileError.message);
+  }
   return json({ ok: true, data: { id: profile.id } });
 }
 
@@ -320,7 +332,7 @@ async function handleInventoryList(request, env, kind) {
 async function handleInventoryCreate(request, env, kind) {
   const { admin } = await requireSupervisor(request, env);
   const { data } = await readJson(request);
-  const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos');
+  const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos' || kind === 'motos_e');
   const stocks = normalizeStocks(data);
   validatePricing(data);
 
@@ -342,7 +354,7 @@ async function handleInventoryUpdate(request, env, kind, id) {
   const patch = { ...data };
 
   if (data.marca_id !== undefined || data.marca !== undefined) {
-    const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos');
+    const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos' || kind === 'motos_e');
     patch.marca_id = marca_id;
     patch.marca = marca_nombre;
   }
@@ -350,13 +362,21 @@ async function handleInventoryUpdate(request, env, kind, id) {
   if (
     data.precio !== undefined ||
     data.precio_final !== undefined ||
+    data.costo !== undefined ||
+    data.precio_venta !== undefined ||
     data.descuento_maximo_pct !== undefined
   ) {
-    validatePricing({
-      precio: data.precio ?? 0,
-      precio_final: data.precio_final ?? 0,
-      descuento_maximo_pct: data.descuento_maximo_pct ?? 0,
-    });
+    validatePricing(kind === 'motos' || kind === 'motos_e'
+      ? {
+          costo: data.costo ?? 0,
+          precio_venta: data.precio_venta ?? 0,
+          descuento_maximo_pct: data.descuento_maximo_pct ?? 0,
+        }
+      : {
+          precio: data.precio ?? 0,
+          precio_final: data.precio_final ?? 0,
+          descuento_maximo_pct: data.descuento_maximo_pct ?? 0,
+        });
   }
 
   if (
@@ -381,13 +401,13 @@ async function handleInventoryDelete(request, env, kind, id) {
 
 async function handleInventoryReport(request, env) {
   const { admin } = await requireAuth(request, env);
-  const tables = ['motos', 'accesorios', 'repuestos'];
+  const tables = ['motos', 'motos_e', 'accesorios', 'repuestos'];
   const result = {};
 
   for (const table of tables) {
     const { data, error } = await admin
       .from(table)
-      .select('id, precio, cantidad_libre, cantidad_reservada, cantidad_vendida')
+      .select('*')
       .eq('activo', true);
     if (error) return fail(error.message, 500);
 
@@ -396,7 +416,7 @@ async function handleInventoryReport(request, env) {
       total_unidades: (data || []).reduce((sum, row) => sum + Number(row.cantidad_libre || 0), 0),
       total_reservadas: (data || []).reduce((sum, row) => sum + Number(row.cantidad_reservada || 0), 0),
       total_vendidas: (data || []).reduce((sum, row) => sum + Number(row.cantidad_vendida || 0), 0),
-      valor_total: (data || []).reduce((sum, row) => sum + Number(row.precio || 0) * Number(row.cantidad_libre || 0), 0),
+      valor_total: (data || []).reduce((sum, row) => sum + Number(row.costo ?? row.precio ?? 0) * Number(row.cantidad_libre || 0), 0),
     };
   }
 
@@ -410,13 +430,13 @@ async function upsertMotoFromCsv(admin, data) {
     const { error } = await admin.from('motos').update({
       marca_id: data.marca_id,
       marca: data.marca,
-      modelo: data.modelo,
+      ano: data.ano,
       tipo: data.tipo,
       color: data.color,
       cilindrada: data.cilindrada,
       motor: data.motor,
-      precio: data.precio,
-      precio_final: data.precio_final,
+      costo: data.costo,
+      precio_venta: data.precio_venta,
       descuento_maximo_pct: data.descuento_maximo_pct,
       cantidad_libre: data.cantidad_libre,
       activo: true,
@@ -428,14 +448,56 @@ async function upsertMotoFromCsv(admin, data) {
   const { error } = await admin.from('motos').insert({
     marca_id: data.marca_id,
     marca: data.marca,
-    modelo: data.modelo,
+    ano: data.ano,
     tipo: data.tipo,
     color: data.color,
     chasis: data.chasis,
     cilindrada: data.cilindrada,
     motor: data.motor,
-    precio: data.precio,
-    precio_final: data.precio_final,
+    costo: data.costo,
+    precio_venta: data.precio_venta,
+    descuento_maximo_pct: data.descuento_maximo_pct,
+    cantidad_libre: data.cantidad_libre,
+    cantidad_reservada: 0,
+    cantidad_vendida: 0,
+  });
+  if (error) throw new Error(error.message);
+  return 'inserted';
+}
+
+async function upsertMotoEFromCsv(admin, data) {
+  const { data: existing } = await admin.from('motos_e').select('id').eq('chasis', data.chasis).maybeSingle();
+
+  if (existing) {
+    const { error } = await admin.from('motos_e').update({
+      marca_id: data.marca_id,
+      marca: data.marca,
+      ano: data.ano,
+      tipo: data.tipo,
+      color: data.color,
+      potencia: data.potencia,
+      motor: data.motor,
+      costo: data.costo,
+      precio_venta: data.precio_venta,
+      descuento_maximo_pct: data.descuento_maximo_pct,
+      cantidad_libre: data.cantidad_libre,
+      activo: true,
+    }).eq('id', existing.id);
+    if (error) throw new Error(error.message);
+    return 'updated';
+  }
+
+  const { error } = await admin.from('motos_e').insert({
+    marca_id: data.marca_id,
+    marca: data.marca,
+    ano: data.ano,
+    tipo: data.tipo,
+    color: data.color,
+    chasis: data.chasis,
+    potencia: data.potencia,
+    motor: data.motor,
+    costo: data.costo,
+    precio_venta: data.precio_venta,
     descuento_maximo_pct: data.descuento_maximo_pct,
     cantidad_libre: data.cantidad_libre,
     cantidad_reservada: 0,
@@ -537,28 +599,56 @@ async function importInventoryCsv(request, env, kind) {
   let updated = 0;
 
   if (kind === 'motos') {
-    requireColumns(header, ['marca', 'modelo', 'tipo', 'color', 'chasis', 'cilindrada', 'motor', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    requireColumns(header, ['marca', 'ano', 'tipo', 'color', 'chasis', 'cilindrada', 'motor', 'costo', 'precio_venta', 'descuento_maximo_pct', 'cantidad_libre']);
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, true);
       const data = {
         marca_id,
         marca: marca_nombre,
-        modelo: row.modelo,
+        ano: row.ano,
         tipo: textOrNull(row.tipo),
         color: textOrNull(row.color),
         chasis: row.chasis,
         cilindrada: textOrNull(row.cilindrada),
         motor: textOrNull(row.motor),
-        precio: requiredNumber(row.precio, 'precio'),
-        precio_final: requiredNumber(row.precio_final, 'precio_final'),
+        costo: requiredNumber(row.costo, 'costo'),
+        precio_venta: requiredNumber(row.precio_venta, 'precio_venta'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
         cantidad_libre: numberOrZero(row.cantidad_libre),
       };
 
-      if (!data.marca || !data.modelo || !data.chasis) throw new Error(`Fila ${index + 2}: campos requeridos faltantes`);
+      if (!data.marca || !data.ano || !data.chasis) throw new Error(`Fila ${index + 2}: campos requeridos faltantes`);
       validatePricing(data);
       const operation = await upsertMotoFromCsv(admin, data);
+      if (operation === 'inserted') inserted += 1;
+      else updated += 1;
+    }
+  }
+
+  if (kind === 'motos_e') {
+    requireColumns(header, ['marca', 'ano', 'tipo', 'color', 'chasis', 'potencia', 'motor', 'costo', 'precio_venta', 'descuento_maximo_pct', 'cantidad_libre']);
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rowObject(header, rows[index]);
+      const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, true);
+      const data = {
+        marca_id,
+        marca: marca_nombre,
+        ano: row.ano,
+        tipo: textOrNull(row.tipo),
+        color: textOrNull(row.color),
+        chasis: row.chasis,
+        potencia: textOrNull(row.potencia),
+        motor: textOrNull(row.motor),
+        costo: requiredNumber(row.costo, 'costo'),
+        precio_venta: requiredNumber(row.precio_venta, 'precio_venta'),
+        descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
+        cantidad_libre: numberOrZero(row.cantidad_libre),
+      };
+
+      if (!data.marca || !data.ano || !data.chasis) throw new Error(`Fila ${index + 2}: campos requeridos faltantes`);
+      validatePricing(data);
+      const operation = await upsertMotoEFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
       else updated += 1;
     }
@@ -789,7 +879,7 @@ async function handleTramitesList(request, env) {
 
   let query = admin
     .from('tramites')
-    .select('id, venta_item_id, tipo, nombre, marca, costo_total, cobro_en_venta, a_cuenta, saldo, estado, observaciones, creado_en, actualizado_en, venta_items!inner(id, moto_id, motos(marca, modelo))')
+    .select('id, venta_item_id, tipo, nombre, marca, costo_total, cobro_en_venta, a_cuenta, saldo, estado, observaciones, creado_en, actualizado_en, venta_items!inner(id, moto_id, motos(marca, ano))')
     .order('creado_en', { ascending: false });
 
   if (estado) query = query.eq('estado', estado);
@@ -802,7 +892,7 @@ async function handleTramitesList(request, env) {
     data: (data || []).map((row) => ({
       ...row,
       moto_marca: row.venta_items?.motos?.marca ?? null,
-      moto_modelo: row.venta_items?.motos?.modelo ?? null,
+      moto_modelo: row.venta_items?.motos?.ano ?? null,
       venta_items: undefined,
     })),
   });
@@ -1014,7 +1104,7 @@ function buildCsv(columns, rows) {
 
 async function handleBackupExport(request, env) {
   const { admin } = await requireSupervisor(request, env);
-  const tables = ['user_profiles', 'config', 'marcas', 'motos', 'accesorios', 'repuestos', 'proformas', 'proforma_items', 'ventas', 'venta_items', 'tramites'];
+  const tables = ['user_profiles', 'config', 'marcas', 'motos', 'motos_e', 'accesorios', 'repuestos', 'proformas', 'proforma_items', 'ventas', 'venta_items', 'tramites'];
   const backup = {};
 
   for (const table of tables) {
@@ -1131,22 +1221,40 @@ async function handleQuoteExport(request, env, id) {
 async function handleInventoryExport(request, env, kind) {
   const { admin } = await requireSupervisor(request, env);
   const tableConfigs = {
-    motos: { columns: ['Marca', 'Modelo', 'Chasis', 'Stock', 'Precio Final'], map: (row) => [row.marca, row.modelo, row.chasis, row.cantidad_libre, row.precio_final] },
+    motos: { columns: ['Marca', 'Ano', 'Chasis', 'Stock', 'Precio de Venta'], map: (row) => [row.marca, row.ano, row.chasis, row.cantidad_libre, row.precio_venta] },
+    motos_e: { columns: ['Marca', 'Ano', 'Chasis', 'Potencia', 'Stock', 'Precio de Venta'], map: (row) => [row.marca, row.ano, row.chasis, row.potencia ?? '', row.cantidad_libre, row.precio_venta] },
     accesorios: { columns: ['Tipo', 'Marca', 'Color', 'Stock', 'Precio Final'], map: (row) => [row.tipo, row.marca ?? '', row.color ?? '', row.cantidad_libre, row.precio_final] },
     repuestos: { columns: ['Tipo', 'Marca', 'Stock', 'Precio Final'], map: (row) => [row.tipo, row.marca ?? '', row.cantidad_libre, row.precio_final] },
   };
 
   if (kind === 'productos') {
-    const sections = [];
-    for (const table of ['motos', 'accesorios', 'repuestos']) {
+    const rows = [];
+    for (const table of ['motos', 'motos_e', 'accesorios', 'repuestos']) {
       const { data, error } = await admin.from(table).select('*').eq('activo', true);
       if (error) return fail(error.message, 500);
-      const config = tableConfigs[table];
-      sections.push(`# ${table.toUpperCase()}`);
-      sections.push(buildCsv(config.columns, (data || []).map(config.map)));
-      sections.push('');
+
+      for (const row of data || []) {
+        rows.push([
+          table === 'motos_e' ? 'moto-e' : table.slice(0, -1),
+          row.marca ?? '',
+          row.ano ?? row.modelo ?? '',
+          row.tipo ?? '',
+          row.color ?? '',
+          row.chasis ?? '',
+          row.cantidad_libre ?? 0,
+          row.precio_venta ?? row.precio_final ?? 0,
+        ]);
+      }
     }
-    return attachment(sections.join('\n'), `productos-${Date.now()}.csv`, 'text/csv; charset=utf-8');
+
+    return attachment(
+      buildCsv(
+        ['Categoria', 'Marca', 'Ano', 'Tipo', 'Color', 'Chasis', 'Stock', 'Precio Venta'],
+        rows
+      ),
+      `productos-${Date.now()}.csv`,
+      'text/csv; charset=utf-8'
+    );
   }
 
   const config = tableConfigs[kind];
@@ -1242,6 +1350,12 @@ export default {
       if (path.startsWith('/products/motos/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'motos', path.split('/')[3]);
       if (path.startsWith('/products/motos/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'motos', path.split('/')[3]);
 
+      if (path === '/products/motos-e' && request.method === 'GET') return handleInventoryList(request, env, 'motos_e');
+      if (path === '/products/motos-e' && request.method === 'POST') return handleInventoryCreate(request, env, 'motos_e');
+      if (path === '/products/motos-e/import' && request.method === 'POST') return importInventoryCsv(request, env, 'motos_e');
+      if (path.startsWith('/products/motos-e/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'motos_e', path.split('/')[3]);
+      if (path.startsWith('/products/motos-e/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'motos_e', path.split('/')[3]);
+
       if (path === '/products/accesorios' && request.method === 'GET') return handleInventoryList(request, env, 'accesorios');
       if (path === '/products/accesorios' && request.method === 'POST') return handleInventoryCreate(request, env, 'accesorios');
       if (path === '/products/accesorios/import' && request.method === 'POST') return importInventoryCsv(request, env, 'accesorios');
@@ -1272,6 +1386,7 @@ export default {
       if (path === '/exports/manual' && request.method === 'GET') return handleManualExport();
       if (path.startsWith('/exports/quotes/') && request.method === 'GET') return handleQuoteExport(request, env, path.split('/')[3]);
       if (path === '/exports/inventory/motos' && request.method === 'GET') return handleInventoryExport(request, env, 'motos');
+      if (path === '/exports/inventory/motos-e' && request.method === 'GET') return handleInventoryExport(request, env, 'motos_e');
       if (path === '/exports/inventory/accesorios' && request.method === 'GET') return handleInventoryExport(request, env, 'accesorios');
       if (path === '/exports/inventory/repuestos' && request.method === 'GET') return handleInventoryExport(request, env, 'repuestos');
       if (path === '/exports/inventory/productos' && request.method === 'GET') return handleInventoryExport(request, env, 'productos');

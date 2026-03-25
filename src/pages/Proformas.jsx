@@ -37,7 +37,7 @@ export default function Proformas() {
     if (!id) return ''
     if (tipo === 'moto') {
       const p = motos.find(m => m.id === id)
-      return p ? `${p.marca} ${p.modelo}`.trim() : ''
+      return p ? `${p.marca} ${p.ano ?? p.modelo}`.trim() : ''
     }
     if (tipo === 'accesorio') {
       const p = accesorios.find(a => a.id === id)
@@ -200,7 +200,7 @@ export default function Proformas() {
                 <option value="">Selecciona</option>
                 {productos.map(p => (
                   <option key={p.id} value={p.id}>
-                    {itemForm.tipo === 'moto' ? `${p.marca} ${p.modelo}` : `${p.tipo} ${p.marca ? '· ' + p.marca : ''}`}
+                    {itemForm.tipo === 'moto' ? `${p.marca} ${p.ano ?? p.modelo}` : `${p.tipo} ${p.marca ? '· ' + p.marca : ''}`}
                   </option>
                 ))}
               </select>
@@ -316,7 +316,7 @@ export default function Proformas() {
                     <thead>
                       <tr>
                         <th style={S.th}>Descripcion</th>
-                        <th style={S.th}>Modelo</th>
+                        <th style={S.th}>Año</th>
                         <th style={S.th}>Tipo</th>
                         <th style={S.th}>Color</th>
                         <th style={S.th}>Cilindrada</th>

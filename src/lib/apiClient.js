@@ -109,10 +109,31 @@ async function request(path, options = {}) {
 }
 
 async function download(path, { token, filename } = {}) {
-  const headers = {};
-  if (token) headers.authorization = `Bearer ${token}`;
+  let authToken = token;
+  let sessionId = getStoredSession().sessionId;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers });
+  const makeDownloadRequest = async (currentToken, currentSessionId) => {
+    const headers = {};
+    if (currentToken) headers.authorization = `Bearer ${currentToken}`;
+    if (currentSessionId) headers['x-app-session-id'] = currentSessionId;
+    return fetch(`${API_BASE_URL}${path}`, { headers });
+  };
+
+  let response = await makeDownloadRequest(authToken, sessionId);
+
+  if (response.status === 401 && authToken) {
+    const newToken = await refreshSession();
+    if (newToken) {
+      authToken = newToken;
+      sessionId = getStoredSession().sessionId;
+      response = await makeDownloadRequest(authToken, sessionId);
+    }
+  }
+
+  if (response.status === 401) {
+    clearSession();
+  }
+
   if (!response.ok) {
     const payload = response.headers.get('content-type')?.includes('application/json')
       ? await response.json()
@@ -165,12 +186,25 @@ export const api = {
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/products/motos${suffix}`, { token });
   },
+  listarMotosE: ({ token, buscar, soloStock } = {}) => {
+    const query = new URLSearchParams();
+    if (buscar) query.set('buscar', buscar);
+    if (soloStock) query.set('soloStock', 'true');
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/products/motos-e${suffix}`, { token });
+  },
   crearMoto: ({ token, data }) => request('/products/motos', { method: 'POST', token, body: { data } }),
+  crearMotoE: ({ token, data }) => request('/products/motos-e', { method: 'POST', token, body: { data } }),
   actualizarMoto: ({ token, id, data }) => request(`/products/motos/${id}`, { method: 'PATCH', token, body: { data } }),
+  actualizarMotoE: ({ token, id, data }) => request(`/products/motos-e/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarMoto: ({ token, id }) => request(`/products/motos/${id}`, { method: 'DELETE', token }),
+  eliminarMotoE: ({ token, id }) => request(`/products/motos-e/${id}`, { method: 'DELETE', token }),
   importarMotosCsv: ({ token, csvText }) =>
     request('/products/motos/import', { method: 'POST', token, body: { csvText } }),
+  importarMotosECsv: ({ token, csvText }) =>
+    request('/products/motos-e/import', { method: 'POST', token, body: { csvText } }),
   exportarMotosArchivo: ({ token }) => download('/exports/inventory/motos', { token, filename: 'motos.csv' }),
+  exportarMotosEArchivo: ({ token }) => download('/exports/inventory/motos-e', { token, filename: 'motos-e.csv' }),
 
   listarMarcas: ({ token }) => request('/brands', { token }),
   crearMarca: ({ token, data }) => request('/brands', { method: 'POST', token, body: { data } }),

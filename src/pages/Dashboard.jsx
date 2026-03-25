@@ -41,10 +41,11 @@ export default function Dashboard() {
   }
 
   const cards = stats ? [
-    { label:'Motos en stock',    value: stats.motos.total_unidades,      sub:`${stats.motos.items.length} modelos`,      color:'#f59e0b', icon:'🏍️' },
-    { label:'Accesorios',        value: stats.accesorios.total_unidades,  sub:`${stats.accesorios.items.length} tipos`,    color:'#3b82f6', icon:'🛡️' },
-    { label:'Repuestos',         value: stats.repuestos.total_unidades,   sub:`${stats.repuestos.items.length} tipos`,     color:'#8b5cf6', icon:'⚙️' },
-    { label:'Valor inventario',  value: formatBs(stats.motos.valor_total + stats.accesorios.valor_total + stats.repuestos.valor_total), sub:'motos + accesorios + repuestos', color:'#10b981', icon:'💰' },
+    { label:'Motos en stock',    value: stats.motos.total_unidades,      sub:`${stats.motos.items.length} registros`,      color:'#f59e0b', icon:'🏍️' },
+    { label:'Motos-E en stock',  value: stats.motos_e.total_unidades,    sub:`${stats.motos_e.items.length} registros`,    color:'#14b8a6', icon:'🔋' },
+    { label:'Accesorios',        value: stats.accesorios.total_unidades,  sub:`${stats.accesorios.items.length} tipos`,     color:'#3b82f6', icon:'🛡️' },
+    { label:'Repuestos',         value: stats.repuestos.total_unidades,   sub:`${stats.repuestos.items.length} tipos`,      color:'#8b5cf6', icon:'⚙️' },
+    { label:'Valor inventario',  value: formatBs(stats.motos.valor_total + stats.motos_e.valor_total + stats.accesorios.valor_total + stats.repuestos.valor_total), sub:'motos + motos-e + accesorios + repuestos', color:'#10b981', icon:'💰' },
   ] : []
 
   return (
@@ -58,7 +59,7 @@ export default function Dashboard() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(210px,1fr))', gap:16, marginBottom:28 }}>
         {cards.length === 0
-          ? [1,2,3,4].map(i => (
+          ? [1,2,3,4,5].map(i => (
             <div key={i} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:12, padding:'20px 22px', opacity:0.4 }}>
               <div style={{ width:60, height:10, background:'var(--border)', borderRadius:4, marginBottom:12 }}/>
               <div style={{ width:40, height:28, background:'var(--border)', borderRadius:4 }}/>

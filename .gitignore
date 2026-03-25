@@ -9,10 +9,6 @@ out/
 # Vite
 .vite/
 
-# Electron
-release/
-app.asar
-
 # Logs
 logs/
 *.log
@@ -45,14 +41,6 @@ temp/
 
 # Assets
 # Do not ignore src/images so UI assets can be bundled
-
-# Build outputs
-/dist-electron/
-
-# Local DB files
-moto_system.db
-moto_system.db-shm
-moto_system.db-wal
 
 # PDFs generated
 *.pdf

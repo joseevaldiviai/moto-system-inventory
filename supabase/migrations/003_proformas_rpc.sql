@@ -131,6 +131,8 @@ declare
   v_total_descuentos numeric(12,2) := 0;
   v_total numeric(12,2) := 0;
   v_descripcion text;
+  v_costo numeric(12,2);
+  v_precio_venta numeric(12,2);
 begin
   if coalesce(trim(p_cliente_nombre), '') = '' or coalesce(trim(p_cliente_ci_nit), '') = '' or coalesce(trim(p_cliente_celular), '') = '' then
     raise exception 'Datos del cliente incompletos';
@@ -206,31 +208,39 @@ begin
       raise exception 'Descuento supera el maximo permitido';
     end if;
 
-    if v_product.precio_final < v_product.precio then
-      raise exception 'Producto con precio_final menor a precio';
+    if v_table_name = 'motos' then
+      v_costo := v_product.costo;
+      v_precio_venta := v_product.precio_venta;
+    else
+      v_costo := v_product.precio;
+      v_precio_venta := v_product.precio_final;
+    end if;
+
+    if v_precio_venta < v_costo then
+      raise exception 'Producto con precio de venta menor a costo';
     end if;
 
     if v_product.cantidad_libre < v_cantidad then
       raise exception 'Stock insuficiente';
     end if;
 
-    v_descuento_monto := (v_product.precio_final * v_descuento_pct) / 100;
-    if v_descuento_monto > (v_product.precio_final - v_product.precio) then
+    v_descuento_monto := (v_precio_venta * v_descuento_pct) / 100;
+    if v_descuento_monto > (v_precio_venta - v_costo) then
       raise exception 'Descuento supera la ganancia unitaria';
     end if;
 
-    v_precio_unitario_final := v_product.precio_final - v_descuento_monto;
+    v_precio_unitario_final := v_precio_venta - v_descuento_monto;
     v_subtotal := v_precio_unitario_final * v_cantidad;
 
     if v_table_name = 'motos' then
-      v_descripcion := coalesce(nullif(v_item->>'descripcion', ''), trim(v_product.marca || ' ' || v_product.modelo));
+      v_descripcion := coalesce(nullif(v_item->>'descripcion', ''), trim(v_product.marca || ' ' || v_product.ano));
       insert into public.proforma_items (
         proforma_id, moto_id, descripcion, modelo, tipo, color, cilindrada, motor,
         precio_costo_snap, precio_final_snap, descuento_maximo_snap, descuento_pct,
         descuento_monto, cantidad, precio_unitario_final, subtotal
       ) values (
-        v_proforma_id, v_producto_id, v_descripcion, v_product.modelo, v_product.tipo, v_product.color, v_product.cilindrada, v_product.motor,
-        v_product.precio, v_product.precio_final, v_product.descuento_maximo_pct, v_descuento_pct,
+        v_proforma_id, v_producto_id, v_descripcion, v_product.ano, v_product.tipo, v_product.color, v_product.cilindrada, v_product.motor,
+        v_costo, v_precio_venta, v_product.descuento_maximo_pct, v_descuento_pct,
         v_descuento_monto, v_cantidad, v_precio_unitario_final, v_subtotal
       );
     elsif v_table_name = 'accesorios' then
@@ -241,7 +251,7 @@ begin
         descuento_monto, cantidad, precio_unitario_final, subtotal
       ) values (
         v_proforma_id, v_producto_id, v_descripcion, null, v_product.tipo, v_product.color, null, null,
-        v_product.precio, v_product.precio_final, v_product.descuento_maximo_pct, v_descuento_pct,
+        v_costo, v_precio_venta, v_product.descuento_maximo_pct, v_descuento_pct,
         v_descuento_monto, v_cantidad, v_precio_unitario_final, v_subtotal
       );
     else
@@ -252,14 +262,14 @@ begin
         descuento_monto, cantidad, precio_unitario_final, subtotal
       ) values (
         v_proforma_id, v_producto_id, v_descripcion, null, v_product.tipo, null, null, null,
-        v_product.precio, v_product.precio_final, v_product.descuento_maximo_pct, v_descuento_pct,
+        v_costo, v_precio_venta, v_product.descuento_maximo_pct, v_descuento_pct,
         v_descuento_monto, v_cantidad, v_precio_unitario_final, v_subtotal
       );
     end if;
 
     perform public.reserve_stock(v_table_name, v_producto_id, v_cantidad);
 
-    v_subtotal_total := v_subtotal_total + (v_product.precio_final * v_cantidad);
+    v_subtotal_total := v_subtotal_total + (v_precio_venta * v_cantidad);
     v_total_descuentos := v_total_descuentos + (v_descuento_monto * v_cantidad);
     v_total := v_total + v_subtotal;
   end loop;

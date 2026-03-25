@@ -1,15 +1,18 @@
 const TABLES = {
-  motos: { table: 'motos', select: '*, marcas(nombre)', search: ['marca', 'modelo', 'chasis'] },
+  motos: { table: 'motos', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
+  motos_e: { table: 'motos_e', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
   accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'tipo'] },
   repuestos: { table: 'repuestos', select: '*, marcas(nombre)', search: ['marca', 'tipo'] },
 };
 
-export function validatePricing({ precio, precio_final, descuento_maximo_pct }) {
-  if (precio === undefined || precio_final === undefined || descuento_maximo_pct === undefined) return;
-  if (Number(precio) < 0 || Number(precio_final) < 0) throw new Error('Precio invalido');
-  if (Number(precio_final) < Number(precio)) throw new Error('precio_final no puede ser menor a precio');
-  const ganancia = Number(precio_final) - Number(precio);
-  const descuentoMaximoMonto = (Number(precio_final) * Number(descuento_maximo_pct)) / 100;
+export function validatePricing({ precio, precio_final, costo, precio_venta, descuento_maximo_pct }) {
+  const costValue = costo ?? precio;
+  const saleValue = precio_venta ?? precio_final;
+  if (costValue === undefined || saleValue === undefined || descuento_maximo_pct === undefined) return;
+  if (Number(costValue) < 0 || Number(saleValue) < 0) throw new Error('Precio invalido');
+  if (Number(saleValue) < Number(costValue)) throw new Error('El precio de venta no puede ser menor al costo');
+  const ganancia = Number(saleValue) - Number(costValue);
+  const descuentoMaximoMonto = (Number(saleValue) * Number(descuento_maximo_pct)) / 100;
   if (Number(descuento_maximo_pct) < 0 || Number(descuento_maximo_pct) > 100) throw new Error('descuento_maximo_pct invalido');
   if (descuentoMaximoMonto > ganancia) throw new Error('descuento_maximo_pct supera la ganancia unitaria');
 }

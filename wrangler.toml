@@ -1,0 +1,7 @@
+name = "moto-system-api"
+main = "worker/src/index.js"
+compatibility_date = "2026-03-19"
+
+[vars]
+APP_NAME = "Moto System API"
+
