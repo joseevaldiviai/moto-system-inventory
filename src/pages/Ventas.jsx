@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
 export default function Ventas() {
-  const { token } = useAuthStore()
+  const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
   const [motos, setMotos] = useState([])
   const [accesorios, setAccesorios] = useState([])
@@ -15,15 +15,21 @@ export default function Ventas() {
   const [detail, setDetail] = useState(null)
   const [tramites, setTramites] = useState({})
   const [costos, setCostos] = useState({ bsisa: 0, placa: 0 })
+  const inventoryParams = esSupervisor()
+    ? { scope: 'central' }
+    : usuario?.punto_venta_id
+      ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
+      : null
+  const canOperate = esSupervisor() || !!usuario?.punto_venta_id
 
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   const load = async () => {
     const [p, m, a, r] = await Promise.all([
       api.listarProformas({ token, estado: 'ACTIVA' }),
-      api.listarMotos({ token }),
-      api.listarAccesorios({ token }),
-      api.listarRepuestos({ token }),
+      inventoryParams ? api.listarMotos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarAccesorios({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarRepuestos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
@@ -130,6 +136,7 @@ export default function Ventas() {
   ), 0)
 
   const crearVentaDirecta = async () => {
+    if (!canOperate) return toast.error('Asigna un punto de venta al vendedor antes de vender')
     if (!cliente.nombre || !cliente.ci_nit || !cliente.celular) return toast.error('Completa datos del cliente')
     if (!items.length) return toast.error('Agrega al menos un item')
 
@@ -182,6 +189,7 @@ export default function Ventas() {
   }
 
   const consolidar = async (id) => {
+    if (!canOperate) return toast.error('Asigna un punto de venta al vendedor antes de vender')
     const tramitesPayload = []
     for (const [piId, flags] of Object.entries(tramites)) {
       if (flags.bsisa) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'BSISA' })
@@ -218,7 +226,18 @@ export default function Ventas() {
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>VENTAS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Venta directa y desde proformas</h1>
+        {usuario?.punto_venta_nombre && (
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+            Stock de trabajo: {usuario.punto_venta_tipo === 'CENTRAL' ? 'Almacen central' : usuario.punto_venta_nombre}
+          </div>
+        )}
       </div>
+
+      {!canOperate && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid var(--danger)', color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
+          Este vendedor no tiene punto de venta asignado. Un administrador debe asignarlo antes de registrar ventas.
+        </div>
+      )}
 
       <div className="grid-main-two">
         <div style={S.card}>

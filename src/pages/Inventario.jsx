@@ -4,10 +4,14 @@ import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
 export default function Inventario() {
-  const { token, esSupervisor } = useAuthStore()
+  const { token, esSupervisor, usuario } = useAuthStore()
   const [tab, setTab] = useState('motos')
   const [items, setItems] = useState([])
+  const [pointItems, setPointItems] = useState([])
   const [marcas, setMarcas] = useState([])
+  const [puntos, setPuntos] = useState([])
+  const [selectedPointId, setSelectedPointId] = useState('')
+  const [transferForm, setTransferForm] = useState({})
   const [loading, setLoading] = useState(false)
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
@@ -16,6 +20,11 @@ export default function Inventario() {
   const [config, setConfig] = useState({ bsisa: '', placa: '' })
 
   const isSup = esSupervisor()
+  const inventoryParams = isSup
+    ? { scope: 'central' }
+    : usuario?.punto_venta_id
+      ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
+      : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
   const tabs = [
     { id: 'motos', label: 'Motos' },
@@ -25,25 +34,39 @@ export default function Inventario() {
     ...(isSup ? [{ id: 'marcas', label: 'Marcas' }] : []),
   ]
 
+  const fetchByTab = async (currentTab, params = {}) => {
+    if (currentTab === 'motos') return api.listarMotos({ token, ...params })
+    if (currentTab === 'motos_e') return api.listarMotosE({ token, ...params })
+    if (currentTab === 'accesorios') return api.listarAccesorios({ token, ...params })
+    if (currentTab === 'repuestos') return api.listarRepuestos({ token, ...params })
+    if (currentTab === 'marcas') return api.listarMarcas({ token })
+    return { ok: false, error: 'Tab no soportada' }
+  }
+
   const load = async () => {
     setLoading(true)
     try {
-      let res
-      if (tab === 'motos') res = await api.listarMotos({ token })
-      if (tab === 'motos_e') res = await api.listarMotosE({ token })
-      if (tab === 'accesorios') res = await api.listarAccesorios({ token })
-      if (tab === 'repuestos') res = await api.listarRepuestos({ token })
-      if (tab === 'marcas') res = await api.listarMarcas({ token })
+      const res = await fetchByTab(tab, inventoryParams || {})
       if (res?.ok) {
         setItems(res.data)
         if (tab === 'marcas') setMarcas(res.data)
+      }
+      if (isSup && selectedPointId && tab !== 'marcas') {
+        const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
+        const pointRes = await fetchByTab(tab, {
+          scope: selectedPoint?.tipo === 'CENTRAL' ? 'central' : 'point',
+          puntoVentaId: selectedPoint?.tipo === 'CENTRAL' ? undefined : selectedPointId,
+        })
+        setPointItems(pointRes.ok ? pointRes.data : [])
+      } else {
+        setPointItems([])
       }
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [tab])
+  useEffect(() => { load() }, [tab, token, selectedPointId, usuario?.punto_venta_id])
   useEffect(() => {
     if (!isSup) return
     api.configGet({ token }).then(r => {
@@ -58,6 +81,15 @@ export default function Inventario() {
     if (!token) return
     api.listarMarcas({ token }).then(r => {
       if (r.ok) setMarcas(r.data)
+    })
+  }, [token])
+  useEffect(() => {
+    if (!isSup || !token) return
+    api.listarPuntosVenta({ token }).then(r => {
+      if (!r.ok) return
+      setPuntos(r.data)
+      const firstPoint = r.data.find(point => point.tipo === 'CENTRAL') || r.data.find(point => point.activo)
+      if (!selectedPointId && firstPoint) setSelectedPointId(String(firstPoint.id))
     })
   }, [token])
 
@@ -136,6 +168,25 @@ export default function Inventario() {
     toast.success('Costos actualizados')
   }
 
+  const handleTransfer = async (itemId) => {
+    const current = transferForm[itemId] || { punto_venta_id: selectedPointId, cantidad: '' }
+    if (!current.punto_venta_id) return toast.error('Selecciona un punto de venta')
+    if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
+    const res = await api.transferirInventario({
+      token,
+      data: {
+        kind: tab,
+        product_id: itemId,
+        punto_venta_id: Number(current.punto_venta_id),
+        cantidad: Number(current.cantidad),
+      },
+    })
+    if (!res.ok) return toast.error(res.error || 'Error')
+    toast.success('Stock transferido al punto de venta')
+    setTransferForm((state) => ({ ...state, [itemId]: { ...state[itemId], cantidad: '' } }))
+    load()
+  }
+
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
@@ -203,7 +254,20 @@ export default function Inventario() {
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>INVENTARIO</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Productos</h1>
+        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+          {isSup
+            ? 'Registro y control del almacen central'
+            : usuario?.punto_venta_nombre
+              ? `Stock asignado a ${usuario.punto_venta_nombre}`
+              : 'Este vendedor no tiene punto de venta asignado'}
+        </div>
       </div>
+
+      {!isSup && !inventoryParams && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid var(--danger)', color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
+          Un administrador debe asignar un punto de venta al vendedor para consultar su inventario.
+        </div>
+      )}
 
       <div className="button-row" style={{ marginBottom: 16 }}>
         {tabs.map(t => (
@@ -247,6 +311,7 @@ export default function Inventario() {
                       <th style={{ padding: '6px 4px' }}>Producto</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
+                      {isSup && <th style={{ padding: '6px 4px' }}>Asignar a punto</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -259,6 +324,40 @@ export default function Inventario() {
                         </td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
+                        {isSup && (
+                          <td style={{ padding: '6px 4px', minWidth: 230 }}>
+                            <div style={{ display: 'grid', gap: 6 }}>
+                              <select
+                                style={S.input}
+                                value={transferForm[it.id]?.punto_venta_id ?? selectedPointId}
+                                onChange={e => setTransferForm(state => ({
+                                  ...state,
+                                  [it.id]: { ...(state[it.id] || {}), punto_venta_id: e.target.value },
+                                }))}
+                              >
+                                <option value="">Selecciona punto</option>
+                                {puntos.filter(point => point.tipo !== 'CENTRAL' && point.activo).map(point => (
+                                  <option key={point.id} value={point.id}>{point.nombre}</option>
+                                ))}
+                              </select>
+                              <div className="button-row" style={{ gap: 6 }}>
+                                <input
+                                  style={S.input}
+                                  type="number"
+                                  min="1"
+                                  max={it.cantidad_libre}
+                                  placeholder="Cantidad"
+                                  value={transferForm[it.id]?.cantidad ?? ''}
+                                  onChange={e => setTransferForm(state => ({
+                                    ...state,
+                                    [it.id]: { ...(state[it.id] || {}), cantidad: e.target.value },
+                                  }))}
+                                />
+                                <button onClick={() => handleTransfer(it.id)} style={S.btn}>Asignar</button>
+                              </div>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -322,6 +421,43 @@ export default function Inventario() {
                 </>
               )}
             </div>
+
+            {tab !== 'marcas' && (
+              <div style={S.card}>
+                <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Stock por ubicacion</div>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={S.label}>Ubicacion</div>
+                  <select style={S.input} value={selectedPointId} onChange={e => setSelectedPointId(e.target.value)}>
+                    <option value="">Selecciona una ubicacion</option>
+                    {puntos.map(point => (
+                      <option key={point.id} value={point.id}>
+                        {point.tipo === 'CENTRAL' ? 'Almacen Central' : point.nombre} {point.activo ? '' : '(Inactivo)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {!selectedPointId ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona una ubicacion para revisar el stock.</div>
+                ) : pointItems.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Sin stock asignado en esta categoría.</div>
+                ) : (
+                  <div className="list-scroll" style={{ maxHeight: 240 }}>
+                    {pointItems.map((item) => (
+                      <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)', fontSize: 12 }}>
+                        <div style={{ color: 'var(--text-strong)' }}>
+                          {(tab === 'motos' || tab === 'motos_e')
+                            ? `${item.marca} ${item.ano} (${item.chasis})`
+                            : `${item.tipo}${item.marca ? ` · ${item.marca}` : ''}`}
+                        </div>
+                        <div style={{ color: 'var(--text-soft)' }}>
+                          Libre: {item.cantidad_libre} · Reservado: {item.cantidad_reservada} · Vendido: {item.cantidad_vendida}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {tab !== 'marcas' && (
               <div style={S.card}>

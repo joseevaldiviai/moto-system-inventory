@@ -3,6 +3,13 @@ import { createAdminClient, createPublicClient, requireAuth, requireSupervisor }
 import { getInventoryConfig, normalizeStocks, resolveMarca, validatePricing } from './lib/inventory';
 import { parseCsv, requireColumns, rowObject, requiredNumber, numberOrZero, textOrNull } from './lib/csv';
 
+const POINT_TYPES = {
+  CENTRAL: 'CENTRAL',
+  POS: 'PUNTO_VENTA',
+};
+
+const PRODUCT_TABLES = ['motos', 'motos_e', 'accesorios', 'repuestos'];
+
 async function setActiveSession(admin, userId, sessionId) {
   const patch = {
     sesion_activa_id: sessionId,
@@ -10,6 +17,154 @@ async function setActiveSession(admin, userId, sessionId) {
   };
   const { error } = await admin.from('user_profiles').update(patch).eq('id', userId);
   if (error) throw new Error(error.message);
+}
+
+function normalizePointCode(nombre, codigo = '') {
+  const raw = String(codigo || nombre || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32);
+
+  return raw || `PV_${Date.now()}`;
+}
+
+async function getCentralPoint(admin) {
+  const { data, error } = await admin
+    .from('puntos_venta')
+    .select('id, nombre, codigo, tipo, activo')
+    .eq('tipo', POINT_TYPES.CENTRAL)
+    .single();
+
+  if (error || !data) throw new Error(error?.message || 'No existe almacen central configurado');
+  return data;
+}
+
+async function getPointById(admin, pointId) {
+  const { data, error } = await admin
+    .from('puntos_venta')
+    .select('id, nombre, codigo, tipo, activo')
+    .eq('id', Number(pointId))
+    .single();
+
+  if (error || !data) throw new Error('Punto de venta no encontrado');
+  return data;
+}
+
+async function enrichUser(admin, profile) {
+  if (!profile) return null;
+  if (!profile.punto_venta_id) {
+    return {
+      ...profile,
+      punto_venta_nombre: null,
+      punto_venta_tipo: null,
+    };
+  }
+
+  const point = await getPointById(admin, profile.punto_venta_id);
+  return {
+    ...profile,
+    punto_venta_nombre: point.nombre,
+    punto_venta_tipo: point.tipo,
+  };
+}
+
+function mapSessionUser(profile) {
+  return {
+    id: profile.id,
+    nombre: profile.nombre,
+    username: profile.username,
+    rol: profile.rol,
+    punto_venta_id: profile.punto_venta_id ?? null,
+    punto_venta_nombre: profile.punto_venta_nombre ?? null,
+    punto_venta_tipo: profile.punto_venta_tipo ?? null,
+  };
+}
+
+async function resolveInventoryScope({ admin, profile, requestedScope, requestedPointId }) {
+  if (requestedScope === 'central') {
+    if (profile.rol !== 'SUPERVISOR') throw new Error('Solo Supervisor puede ver el almacen central');
+    const central = await getCentralPoint(admin);
+    return { scope: 'central', pointId: central.id, point: central };
+  }
+
+  if (requestedScope === 'point') {
+    if (!requestedPointId) throw new Error('punto_venta_id requerido');
+    if (profile.rol !== 'SUPERVISOR' && Number(profile.punto_venta_id) !== Number(requestedPointId)) {
+      throw new Error('No autorizado para consultar ese punto de venta');
+    }
+    const point = await getPointById(admin, requestedPointId);
+    return { scope: point.tipo === POINT_TYPES.CENTRAL ? 'central' : 'point', pointId: point.id, point };
+  }
+
+  if (profile.rol === 'SUPERVISOR') {
+    const central = await getCentralPoint(admin);
+    return { scope: 'central', pointId: central.id, point: central };
+  }
+
+  if (profile.punto_venta_id) {
+    const point = await getPointById(admin, profile.punto_venta_id);
+    return { scope: point.tipo === POINT_TYPES.CENTRAL ? 'central' : 'point', pointId: point.id, point };
+  }
+
+  throw new Error('El usuario no tiene punto de venta asignado');
+}
+
+function buildProductSearchQuery(admin, config, buscar) {
+  let query = admin.from(config.table).select('*').eq('activo', true).order('creado_en', { ascending: false });
+  if (buscar) {
+    const clauses = config.search.map((field) => `${field}.ilike.%${buscar}%`);
+    query = query.or(clauses.join(','));
+  }
+  return query;
+}
+
+async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointId }) {
+  const config = getInventoryConfig(kind);
+  const baseQuery = buildProductSearchQuery(admin, config, buscar);
+
+  if (scope === 'central') {
+    let query = baseQuery;
+    if (soloStock) query = query.gt('cantidad_libre', 0);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  const { data: products, error: productsError } = await baseQuery;
+  if (productsError) throw new Error(productsError.message);
+
+  const productIds = (products || []).map((row) => row.id);
+  if (!productIds.length) return [];
+
+  let stockQuery = admin
+    .from('inventario_puntos_venta')
+    .select('producto_id, cantidad_libre, cantidad_reservada, cantidad_vendida')
+    .eq('punto_venta_id', pointId)
+    .eq('producto_tipo', kind)
+    .in('producto_id', productIds);
+
+  if (soloStock) stockQuery = stockQuery.gt('cantidad_libre', 0);
+
+  const { data: stocks, error: stockError } = await stockQuery;
+  if (stockError) throw new Error(stockError.message);
+
+  const stockMap = new Map((stocks || []).map((row) => [Number(row.producto_id), row]));
+  return (products || [])
+    .map((product) => {
+      const stock = stockMap.get(Number(product.id));
+      if (!stock) return null;
+      return {
+        ...product,
+        cantidad_libre: Number(stock.cantidad_libre || 0),
+        cantidad_reservada: Number(stock.cantidad_reservada || 0),
+        cantidad_vendida: Number(stock.cantidad_vendida || 0),
+        punto_venta_id: pointId,
+      };
+    })
+    .filter(Boolean);
 }
 
 async function handleAuthLogin(request, env) {
@@ -21,7 +176,7 @@ async function handleAuthLogin(request, env) {
 
   const { data: profile, error: profileError } = await admin
     .from('user_profiles')
-    .select('id, email, username, nombre, rol, activo')
+    .select('id, email, username, nombre, rol, activo, punto_venta_id')
     .eq('username', username)
     .single();
 
@@ -47,12 +202,7 @@ async function handleAuthLogin(request, env) {
       token: loginData.session.access_token,
       refresh_token: loginData.session.refresh_token,
       session_id: sessionId,
-      usuario: {
-        id: profile.id,
-        nombre: profile.nombre,
-        username: profile.username,
-        rol: profile.rol,
-      },
+      usuario: mapSessionUser(await enrichUser(admin, profile)),
     },
   });
 }
@@ -74,7 +224,7 @@ async function handleAuthRefresh(request, env) {
 
   const { data: profile, error: profileError } = await admin
     .from('user_profiles')
-    .select('id, email, username, nombre, rol, activo, sesion_activa_id')
+    .select('id, email, username, nombre, rol, activo, sesion_activa_id, punto_venta_id')
     .eq('id', authData.user.id)
     .single();
 
@@ -89,12 +239,7 @@ async function handleAuthRefresh(request, env) {
       token: refreshData.session.access_token,
       refresh_token: refreshData.session.refresh_token,
       session_id,
-      usuario: {
-        id: profile.id,
-        nombre: profile.nombre,
-        username: profile.username,
-        rol: profile.rol,
-      },
+      usuario: mapSessionUser(await enrichUser(admin, profile)),
     },
   });
 }
@@ -104,12 +249,7 @@ async function handleAuthMe(request, env) {
   return json({
     ok: true,
     data: {
-      usuario: {
-        id: session.profile.id,
-        nombre: session.profile.nombre,
-        username: session.profile.username,
-        rol: session.profile.rol,
-      },
+      usuario: mapSessionUser(await enrichUser(session.admin, session.profile)),
     },
   });
 }
@@ -202,10 +342,29 @@ async function handleUsersList(request, env) {
   const { admin } = await requireSupervisor(request, env);
   const { data, error } = await admin
     .from('user_profiles')
-    .select('id, nombre, username, rol, activo, creado_en')
+    .select('id, nombre, username, rol, activo, creado_en, punto_venta_id')
     .order('nombre');
   if (error) return fail(error.message, 500);
-  return json({ ok: true, data });
+
+  const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
+  const pointsMap = new Map();
+  if (pointIds.length) {
+    const { data: points, error: pointsError } = await admin
+      .from('puntos_venta')
+      .select('id, nombre, tipo')
+      .in('id', pointIds);
+    if (pointsError) return fail(pointsError.message, 500);
+    for (const point of points || []) pointsMap.set(Number(point.id), point);
+  }
+
+  return json({
+    ok: true,
+    data: (data || []).map((row) => ({
+      ...row,
+      punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id))?.nombre || null) : null,
+      punto_venta_tipo: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id))?.tipo || null) : null,
+    })),
+  });
 }
 
 async function handleUsersCreate(request, env) {
@@ -216,9 +375,16 @@ async function handleUsersCreate(request, env) {
   const username = data?.username?.trim();
   const password = data?.password;
   const rol = data?.rol;
+  const puntoVentaId = data?.punto_venta_id ? Number(data.punto_venta_id) : null;
 
   if (!nombre || !username || !password || !rol) {
     return fail('nombre, username, password y rol son requeridos');
+  }
+  if (rol === 'CAJERO' && !puntoVentaId) return fail('Debe asignar un punto de venta al vendedor');
+
+  if (puntoVentaId) {
+    const point = await getPointById(admin, puntoVentaId);
+    if (!point.activo) return fail('Punto de venta inactivo');
   }
 
   const email = data.email || `${username}@motosystem.local`;
@@ -238,6 +404,7 @@ async function handleUsersCreate(request, env) {
       nombre,
       rol,
       activo: true,
+      punto_venta_id: puntoVentaId,
     })
     .select('id')
     .single();
@@ -253,10 +420,28 @@ async function handleUsersUpdate(request, env, id) {
   const { admin } = await requireSupervisor(request, env);
   const { data } = await readJson(request);
 
+  const { data: currentProfile, error: currentError } = await admin
+    .from('user_profiles')
+    .select('id, rol, punto_venta_id')
+    .eq('id', id)
+    .single();
+  if (currentError || !currentProfile) return fail('Usuario no encontrado', 404);
+
+  const nextRole = data.rol !== undefined ? data.rol : currentProfile.rol;
+  const nextPointId = data.punto_venta_id !== undefined
+    ? (data.punto_venta_id ? Number(data.punto_venta_id) : null)
+    : currentProfile.punto_venta_id;
+  if (nextRole === 'CAJERO' && !nextPointId) return fail('Debe asignar un punto de venta al vendedor');
+  if (nextPointId) {
+    const point = await getPointById(admin, nextPointId);
+    if (!point.activo) return fail('Punto de venta inactivo');
+  }
+
   const profilePatch = {};
   if (data.nombre !== undefined) profilePatch.nombre = data.nombre;
   if (data.rol !== undefined) profilePatch.rol = data.rol;
   if (data.activo !== undefined) profilePatch.activo = !!data.activo;
+  if (data.punto_venta_id !== undefined) profilePatch.punto_venta_id = nextPointId;
   if (data.activo === false) {
     profilePatch.sesion_activa_id = null;
     profilePatch.sesion_activa_actualizada_en = null;
@@ -272,6 +457,56 @@ async function handleUsersUpdate(request, env, id) {
     if (error) return fail(error.message);
   }
 
+  return json({ ok: true });
+}
+
+async function handlePointsList(request, env) {
+  const { admin } = await requireSupervisor(request, env);
+  const { data, error } = await admin
+    .from('puntos_venta')
+    .select('id, nombre, codigo, tipo, activo, creado_en')
+    .order('tipo', { ascending: true })
+    .order('nombre', { ascending: true });
+  if (error) return fail(error.message, 500);
+  return json({ ok: true, data });
+}
+
+async function handlePointsCreate(request, env) {
+  const { admin } = await requireSupervisor(request, env);
+  const { data } = await readJson(request);
+  const nombre = (data?.nombre || '').trim();
+  if (!nombre) return fail('Nombre requerido');
+
+  const payload = {
+    nombre,
+    codigo: normalizePointCode(nombre, data?.codigo),
+    tipo: POINT_TYPES.POS,
+    activo: true,
+  };
+
+  const { data: created, error } = await admin.from('puntos_venta').insert(payload).select('id').single();
+  if (error) return fail(error.message);
+  return json({ ok: true, data: { id: created.id } });
+}
+
+async function handlePointsUpdate(request, env, id) {
+  const { admin } = await requireSupervisor(request, env);
+  const point = await getPointById(admin, id);
+  const { data } = await readJson(request);
+
+  if (point.tipo === POINT_TYPES.CENTRAL && data?.activo === false) {
+    return fail('El almacen central no puede desactivarse');
+  }
+
+  const patch = {};
+  if (data.nombre !== undefined) patch.nombre = data.nombre?.trim();
+  if (data.codigo !== undefined || data.nombre !== undefined) {
+    patch.codigo = normalizePointCode(data?.nombre || point.nombre, data?.codigo ?? point.codigo);
+  }
+  if (data.activo !== undefined) patch.activo = !!data.activo;
+
+  const { error } = await admin.from('puntos_venta').update(patch).eq('id', Number(id));
+  if (error) return fail(error.message);
   return json({ ok: true });
 }
 
@@ -311,22 +546,40 @@ async function handleBrandsDelete(request, env, id) {
 }
 
 async function handleInventoryList(request, env, kind) {
-  const { admin } = await requireAuth(request, env);
-  const config = getInventoryConfig(kind);
+  const { admin, profile } = await requireAuth(request, env);
   const url = new URL(request.url);
   const buscar = url.searchParams.get('buscar');
   const soloStock = url.searchParams.get('soloStock') === 'true';
+  const requestedScope = url.searchParams.get('scope');
+  const requestedPointId = url.searchParams.get('punto_venta_id');
 
-  let query = admin.from(config.table).select('*').eq('activo', true).order('creado_en', { ascending: false });
-  if (soloStock) query = query.gt('cantidad_libre', 0);
-  if (buscar) {
-    const clauses = config.search.map((field) => `${field}.ilike.%${buscar}%`);
-    query = query.or(clauses.join(','));
+  try {
+    const inventoryScope = await resolveInventoryScope({
+      admin,
+      profile,
+      requestedScope,
+      requestedPointId,
+    });
+    const data = await listInventoryRows({
+      admin,
+      kind,
+      buscar,
+      soloStock,
+      scope: inventoryScope.scope,
+      pointId: inventoryScope.pointId,
+    });
+    return json({
+      ok: true,
+      data,
+      meta: {
+        scope: inventoryScope.scope,
+        punto_venta_id: inventoryScope.pointId,
+        punto_venta_nombre: inventoryScope.point.nombre,
+      },
+    });
+  } catch (error) {
+    return fail(error.message, error.message.includes('Supervisor') || error.message.includes('No autorizado') ? 403 : 400);
   }
-
-  const { data, error } = await query;
-  if (error) return fail(error.message, 500);
-  return json({ ok: true, data });
 }
 
 async function handleInventoryCreate(request, env, kind) {
@@ -400,16 +653,25 @@ async function handleInventoryDelete(request, env, kind, id) {
 }
 
 async function handleInventoryReport(request, env) {
-  const { admin } = await requireAuth(request, env);
-  const tables = ['motos', 'motos_e', 'accesorios', 'repuestos'];
+  const { admin, profile } = await requireAuth(request, env);
+  const url = new URL(request.url);
+  const inventoryScope = await resolveInventoryScope({
+    admin,
+    profile,
+    requestedScope: url.searchParams.get('scope'),
+    requestedPointId: url.searchParams.get('punto_venta_id'),
+  });
   const result = {};
 
-  for (const table of tables) {
-    const { data, error } = await admin
-      .from(table)
-      .select('*')
-      .eq('activo', true);
-    if (error) return fail(error.message, 500);
+  for (const table of PRODUCT_TABLES) {
+    const data = await listInventoryRows({
+      admin,
+      kind: table,
+      buscar: null,
+      soloStock: false,
+      scope: inventoryScope.scope,
+      pointId: inventoryScope.pointId,
+    });
 
     result[table] = {
       items: data || [],
@@ -420,7 +682,43 @@ async function handleInventoryReport(request, env) {
     };
   }
 
-  return json({ ok: true, data: result });
+  return json({
+    ok: true,
+    data: result,
+    meta: {
+      scope: inventoryScope.scope,
+      punto_venta_id: inventoryScope.pointId,
+      punto_venta_nombre: inventoryScope.point.nombre,
+    },
+  });
+}
+
+async function handleInventoryTransfer(request, env) {
+  const { admin } = await requireSupervisor(request, env);
+  const { data } = await readJson(request);
+  const kind = data?.kind;
+  const productId = Number(data?.product_id);
+  const pointId = Number(data?.punto_venta_id);
+  const quantity = Number(data?.cantidad);
+
+  if (!PRODUCT_TABLES.includes(kind)) return fail('Tipo de inventario no soportado');
+  if (!Number.isFinite(productId) || productId <= 0) return fail('Producto invalido');
+  if (!Number.isFinite(pointId) || pointId <= 0) return fail('Punto de venta invalido');
+  if (!Number.isFinite(quantity) || quantity <= 0) return fail('Cantidad invalida');
+
+  const point = await getPointById(admin, pointId);
+  if (point.tipo === POINT_TYPES.CENTRAL) return fail('Selecciona un punto de venta destino');
+  if (!point.activo) return fail('Punto de venta inactivo');
+
+  const { error } = await admin.rpc('transfer_stock_to_point', {
+    p_punto_venta_id: pointId,
+    p_producto_tipo: kind,
+    p_producto_id: productId,
+    p_cantidad: quantity,
+  });
+  if (error) return fail(error.message);
+
+  return json({ ok: true });
 }
 
 async function upsertMotoFromCsv(admin, data) {
@@ -710,7 +1008,7 @@ async function expireQuotes(admin) {
 }
 
 async function handleQuotesList(request, env) {
-  const { admin } = await requireAuth(request, env);
+  const { admin, profile } = await requireAuth(request, env);
   await expireQuotes(admin);
 
   const url = new URL(request.url);
@@ -720,7 +1018,7 @@ async function handleQuotesList(request, env) {
 
   let query = admin
     .from('proformas')
-    .select('id, codigo, cliente_nombre, cliente_ci_nit, cliente_celular, fecha_creacion, fecha_expiracion, subtotal, total_descuentos, total, estado, notas, vendedor_id, user_profiles!proformas_vendedor_id_fkey(nombre)')
+    .select('id, codigo, cliente_nombre, cliente_ci_nit, cliente_celular, fecha_creacion, fecha_expiracion, subtotal, total_descuentos, total, estado, notas, vendedor_id, punto_venta_id, user_profiles!proformas_vendedor_id_fkey(nombre)')
     .order('fecha_creacion', { ascending: false });
 
   if (estado) query = query.eq('estado', estado);
@@ -730,29 +1028,40 @@ async function handleQuotesList(request, env) {
       .lte('fecha_creacion', `${fecha}T23:59:59`);
   }
   if (numero) query = query.ilike('codigo', `%${numero}%`);
+  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
 
   const { data, error } = await query;
   if (error) return fail(error.message, 500);
+
+  const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
+  const pointsMap = new Map();
+  if (pointIds.length) {
+    const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre').in('id', pointIds);
+    if (pointsError) return fail(pointsError.message, 500);
+    for (const point of points || []) pointsMap.set(Number(point.id), point.nombre);
+  }
 
   return json({
     ok: true,
     data: (data || []).map((row) => ({
       ...row,
       vendedor_nombre: row.user_profiles?.nombre ?? null,
+      punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id)) || null) : null,
       user_profiles: undefined,
     })),
   });
 }
 
 async function handleQuotesGet(request, env, id) {
-  const { admin } = await requireAuth(request, env);
+  const { admin, profile } = await requireAuth(request, env);
   await expireQuotes(admin);
 
-  const { data: proforma, error: proformaError } = await admin
+  let query = admin
     .from('proformas')
-    .select('id, codigo, cliente_nombre, cliente_ci_nit, cliente_celular, fecha_creacion, fecha_expiracion, subtotal, total_descuentos, total, estado, notas, vendedor_id, user_profiles!proformas_vendedor_id_fkey(nombre)')
-    .eq('id', id)
-    .single();
+    .select('id, codigo, cliente_nombre, cliente_ci_nit, cliente_celular, fecha_creacion, fecha_expiracion, subtotal, total_descuentos, total, estado, notas, vendedor_id, punto_venta_id, user_profiles!proformas_vendedor_id_fkey(nombre)')
+    .eq('id', id);
+  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
+  const { data: proforma, error: proformaError } = await query.single();
 
   if (proformaError || !proforma) return fail('Proforma no encontrada', 404);
 
@@ -769,6 +1078,7 @@ async function handleQuotesGet(request, env, id) {
     data: {
       ...proforma,
       vendedor_nombre: proforma.user_profiles?.nombre ?? null,
+      punto_venta_nombre: proforma.punto_venta_id ? (await getPointById(admin, proforma.punto_venta_id)).nombre : null,
       user_profiles: undefined,
       items: items || [],
     },
@@ -802,30 +1112,41 @@ async function handleQuotesCancel(request, env, id) {
 }
 
 async function handleSalesList(request, env) {
-  const { admin } = await requireAuth(request, env);
-  const { data, error } = await admin
+  const { admin, profile } = await requireAuth(request, env);
+  let query = admin
     .from('ventas')
-    .select('id, codigo, proforma_id, vendedor_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
+    .select('id, codigo, proforma_id, vendedor_id, punto_venta_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
     .order('fecha_venta', { ascending: false });
+  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
+  const { data, error } = await query;
 
   if (error) return fail(error.message, 500);
+  const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
+  const pointsMap = new Map();
+  if (pointIds.length) {
+    const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre').in('id', pointIds);
+    if (pointsError) return fail(pointsError.message, 500);
+    for (const point of points || []) pointsMap.set(Number(point.id), point.nombre);
+  }
   return json({
     ok: true,
     data: (data || []).map((row) => ({
       ...row,
       vendedor_nombre: row.user_profiles?.nombre ?? null,
+      punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id)) || null) : null,
       user_profiles: undefined,
     })),
   });
 }
 
 async function handleSalesGet(request, env, id) {
-  const { admin } = await requireAuth(request, env);
-  const { data: venta, error: ventaError } = await admin
+  const { admin, profile } = await requireAuth(request, env);
+  let query = admin
     .from('ventas')
-    .select('id, codigo, proforma_id, vendedor_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
-    .eq('id', id)
-    .single();
+    .select('id, codigo, proforma_id, vendedor_id, punto_venta_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
+    .eq('id', id);
+  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
+  const { data: venta, error: ventaError } = await query.single();
 
   if (ventaError || !venta) return fail('Venta no encontrada', 404);
 
@@ -847,6 +1168,7 @@ async function handleSalesGet(request, env, id) {
     data: {
       ...venta,
       vendedor_nombre: venta.user_profiles?.nombre ?? null,
+      punto_venta_nombre: venta.punto_venta_id ? (await getPointById(admin, venta.punto_venta_id)).nombre : null,
       user_profiles: undefined,
       items: items || [],
       tramites: tramites || [],
@@ -987,7 +1309,7 @@ async function handleSalesReport(request, env) {
 
   let query = admin
     .from('ventas')
-    .select('id, codigo, vendedor_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre), venta_items!inner(moto_id, accesorio_id, repuesto_id)')
+    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre), venta_items!inner(moto_id, accesorio_id, repuesto_id)')
     .order('fecha_venta', { ascending: false });
 
   if (fechaInicio) query = query.gte('fecha_venta', `${fechaInicio}T00:00:00`);
@@ -997,9 +1319,18 @@ async function handleSalesReport(request, env) {
   const { data, error } = await query;
   if (error) return fail(error.message, 500);
 
+  const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
+  const pointsMap = new Map();
+  if (pointIds.length) {
+    const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre').in('id', pointIds);
+    if (pointsError) return fail(pointsError.message, 500);
+    for (const point of points || []) pointsMap.set(Number(point.id), point.nombre);
+  }
+
   let ventas = (data || []).map((row) => ({
     ...row,
     vendedor_nombre: row.user_profiles?.nombre ?? null,
+    punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id)) || null) : null,
   }));
 
   if (tipoProducto) {
@@ -1042,7 +1373,7 @@ async function handleQuotesReport(request, env) {
 
   let query = admin
     .from('proformas')
-    .select('id, codigo, vendedor_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_creacion, user_profiles!proformas_vendedor_id_fkey(nombre), proforma_items!inner(moto_id, accesorio_id, repuesto_id)')
+    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_creacion, user_profiles!proformas_vendedor_id_fkey(nombre), proforma_items!inner(moto_id, accesorio_id, repuesto_id)')
     .order('fecha_creacion', { ascending: false });
 
   if (fechaInicio) query = query.gte('fecha_creacion', `${fechaInicio}T00:00:00`);
@@ -1052,9 +1383,18 @@ async function handleQuotesReport(request, env) {
   const { data, error } = await query;
   if (error) return fail(error.message, 500);
 
+  const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
+  const pointsMap = new Map();
+  if (pointIds.length) {
+    const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre').in('id', pointIds);
+    if (pointsError) return fail(pointsError.message, 500);
+    for (const point of points || []) pointsMap.set(Number(point.id), point.nombre);
+  }
+
   let proformas = (data || []).map((row) => ({
     ...row,
     vendedor_nombre: row.user_profiles?.nombre ?? null,
+    punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id)) || null) : null,
   }));
 
   if (tipoProducto) {
@@ -1122,7 +1462,7 @@ function buildCsv(columns, rows) {
 
 async function handleBackupExport(request, env) {
   const { admin } = await requireSupervisor(request, env);
-  const tables = ['user_profiles', 'config', 'marcas', 'motos', 'motos_e', 'accesorios', 'repuestos', 'proformas', 'proforma_items', 'ventas', 'venta_items', 'tramites'];
+  const tables = ['puntos_venta', 'inventario_puntos_venta', 'user_profiles', 'config', 'marcas', 'motos', 'motos_e', 'accesorios', 'repuestos', 'proformas', 'proforma_items', 'ventas', 'venta_items', 'tramites'];
   const backup = {};
 
   for (const table of tables) {
@@ -1357,6 +1697,10 @@ export default {
       if (path === '/users' && request.method === 'POST') return handleUsersCreate(request, env);
       if (path.startsWith('/users/') && request.method === 'PATCH') return handleUsersUpdate(request, env, path.split('/')[2]);
 
+      if (path === '/points' && request.method === 'GET') return handlePointsList(request, env);
+      if (path === '/points' && request.method === 'POST') return handlePointsCreate(request, env);
+      if (path.startsWith('/points/') && request.method === 'PATCH') return handlePointsUpdate(request, env, path.split('/')[2]);
+
       if (path === '/brands' && request.method === 'GET') return handleBrandsList(request, env);
       if (path === '/brands' && request.method === 'POST') return handleBrandsCreate(request, env);
       if (path.startsWith('/brands/') && request.method === 'PATCH') return handleBrandsUpdate(request, env, path.split('/')[2]);
@@ -1385,6 +1729,8 @@ export default {
       if (path === '/products/repuestos/import' && request.method === 'POST') return importInventoryCsv(request, env, 'repuestos');
       if (path.startsWith('/products/repuestos/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'repuestos', path.split('/')[3]);
       if (path.startsWith('/products/repuestos/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'repuestos', path.split('/')[3]);
+
+      if (path === '/inventory/transfers' && request.method === 'POST') return handleInventoryTransfer(request, env);
 
       if (path === '/quotes' && request.method === 'GET') return handleQuotesList(request, env);
       if (path === '/quotes' && request.method === 'POST') return handleQuotesCreate(request, env);

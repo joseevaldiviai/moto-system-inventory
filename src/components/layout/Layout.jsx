@@ -63,6 +63,11 @@ export default function Layout() {
             color:      usuario?.rol === 'SUPERVISOR' ? 'var(--accent)'   : 'var(--info)',
             letterSpacing:1,
           }}>{usuario?.rol}</div>
+          {usuario?.punto_venta_nombre && (
+            <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:10 }}>
+              {usuario.punto_venta_tipo === 'CENTRAL' ? 'Almacen central' : usuario.punto_venta_nombre}
+            </div>
+          )}
           <button
             onClick={() => setTema(tema === 'dark' ? 'light' : 'dark')}
             style={{
@@ -102,7 +107,9 @@ export default function Layout() {
           </button>
           <div style={{ minWidth:0 }}>
             <div style={{ fontSize:12, color:'var(--accent)', letterSpacing:2, textTransform:'uppercase' }}>Moto System</div>
-            <div style={{ fontSize:13, color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{usuario?.nombre}</div>
+            <div style={{ fontSize:13, color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {usuario?.nombre}{usuario?.punto_venta_nombre ? ` · ${usuario.punto_venta_nombre}` : ''}
+            </div>
           </div>
           <button
             onClick={() => setTema(tema === 'dark' ? 'light' : 'dark')}

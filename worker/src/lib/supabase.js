@@ -31,7 +31,7 @@ export async function requireAuth(request, env) {
 
   const { data: profile, error: profileError } = await admin
     .from('user_profiles')
-    .select('id, email, username, nombre, rol, activo, sesion_activa_id, sesion_activa_actualizada_en')
+    .select('id, email, username, nombre, rol, activo, punto_venta_id, sesion_activa_id, sesion_activa_actualizada_en')
     .eq('id', authData.user.id)
     .single();
 

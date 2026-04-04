@@ -5,7 +5,7 @@ import DatePickerInput from '../components/DatePickerInput'
 import { api } from '../lib/apiClient'
 
 export default function Proformas() {
-  const { token } = useAuthStore()
+  const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
   const [motos, setMotos] = useState([])
   const [accesorios, setAccesorios] = useState([])
@@ -19,11 +19,24 @@ export default function Proformas() {
   const [detalleLoading, setDetalleLoading] = useState(false)
   const [printLoading, setPrintLoading] = useState(false)
 
+  const inventoryParams = esSupervisor()
+    ? { scope: 'central' }
+    : usuario?.punto_venta_id
+      ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
+      : null
+  const canOperate = esSupervisor() || !!usuario?.punto_venta_id
+
   const loadCatalogos = async () => {
+    if (!inventoryParams) {
+      setMotos([])
+      setAccesorios([])
+      setRepuestos([])
+      return
+    }
     const [m, a, r] = await Promise.all([
-      api.listarMotos({ token }),
-      api.listarAccesorios({ token }),
-      api.listarRepuestos({ token }),
+      api.listarMotos({ token, soloStock: true, ...inventoryParams }),
+      api.listarAccesorios({ token, soloStock: true, ...inventoryParams }),
+      api.listarRepuestos({ token, soloStock: true, ...inventoryParams }),
     ])
     if (m.ok) setMotos(m.data)
     if (a.ok) setAccesorios(a.data)
@@ -40,15 +53,20 @@ export default function Proformas() {
   }
 
   const load = async () => {
+    if (!inventoryParams) {
+      setMotos([])
+      setAccesorios([])
+      setRepuestos([])
+    }
     const [p, m, a, r] = await Promise.all([
       api.listarProformas({
         token,
         fecha: filtroProformas.fecha || undefined,
         numero: filtroProformas.numero || undefined,
       }),
-      api.listarMotos({ token }),
-      api.listarAccesorios({ token }),
-      api.listarRepuestos({ token }),
+      inventoryParams ? api.listarMotos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarAccesorios({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarRepuestos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
@@ -123,6 +141,7 @@ export default function Proformas() {
   }
 
   const crearProforma = async () => {
+    if (!canOperate) return toast.error('Asigna un punto de venta al vendedor antes de crear proformas')
     if (!cliente.nombre || !cliente.ci_nit || !cliente.celular) return toast.error('Completa datos del cliente')
     if (items.length === 0) return toast.error('Agrega al menos un ítem')
 
@@ -204,7 +223,18 @@ export default function Proformas() {
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>PROFORMAS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Crear y gestionar</h1>
+        {usuario?.punto_venta_nombre && (
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+            Stock de trabajo: {usuario.punto_venta_tipo === 'CENTRAL' ? 'Almacen central' : usuario.punto_venta_nombre}
+          </div>
+        )}
       </div>
+
+      {!canOperate && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid var(--danger)', color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
+          Este vendedor no tiene punto de venta asignado. Un administrador debe asignarlo antes de cotizar.
+        </div>
+      )}
 
       <div className="grid-main-two">
         <div style={S.card}>

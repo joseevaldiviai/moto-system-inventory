@@ -12,10 +12,14 @@ export default function Dashboard() {
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   useEffect(() => {
-    api.reporteInventario({ token })
+    api.reporteInventario({
+      token,
+      scope: esSupervisor() ? 'central' : 'point',
+      puntoVentaId: !esSupervisor() ? usuario?.punto_venta_id : undefined,
+    })
       .then(r => { if (r.ok) setStats(r.data) })
       .catch(() => {})
-  }, [token])
+  }, [token, usuario?.punto_venta_id])
 
   useEffect(() => {
     if (!esSupervisor()) return
@@ -54,6 +58,11 @@ export default function Dashboard() {
         <div style={{ fontSize:10, letterSpacing:4, color:'var(--accent)', textTransform:'uppercase', fontFamily:'monospace' }}>PANEL PRINCIPAL</div>
         <h1 style={{ margin:'4px 0 0', fontSize:24, color:'var(--text-strong)' }}>Bienvenido, {usuario?.nombre}</h1>
         <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:4 }}>{new Date().toLocaleDateString('es-BO', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</div>
+        {usuario?.punto_venta_nombre && (
+          <div style={{ fontSize:12, color:'var(--text-soft)', marginTop:6 }}>
+            Operando desde: {usuario.punto_venta_tipo === 'CENTRAL' ? 'Almacen central' : usuario.punto_venta_nombre}
+          </div>
+        )}
       </div>
 
       {/* Stats */}

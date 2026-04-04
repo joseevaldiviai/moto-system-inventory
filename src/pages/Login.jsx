@@ -8,6 +8,7 @@ import { api } from '../lib/apiClient'
 export default function Login() {
   const [form, setForm]     = useState({ username: '', password: '' })
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const { login } = useAuthStore()
   const navigate  = useNavigate()
 
@@ -46,13 +47,43 @@ export default function Login() {
         {['username','password'].map(field => (
           <div key={field} style={{ marginBottom: field==='username' ? 16 : 28 }}>
             <label style={S.label}>{field === 'username' ? 'Usuario' : 'Contraseña'}</label>
-            <input
-              type={field === 'password' ? 'password' : 'text'}
-              value={form[field]}
-              onChange={e => setForm(f => ({...f, [field]: e.target.value}))}
-              onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              style={S.input}
-            />
+            {field === 'password' ? (
+              <>
+                <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) auto', gap:8, alignItems:'center' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form[field]}
+                    onChange={e => setForm(f => ({...f, [field]: e.target.value}))}
+                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    style={S.input}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(value => !value)}
+                    style={{
+                      padding:'10px 12px',
+                      border:'1px solid var(--border)',
+                      borderRadius:8,
+                      background:'transparent',
+                      color:'var(--text-dim)',
+                      cursor:'pointer',
+                      fontSize:12,
+                      whiteSpace:'nowrap',
+                    }}
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <input
+                type="text"
+                value={form[field]}
+                onChange={e => setForm(f => ({...f, [field]: e.target.value}))}
+                onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                style={S.input}
+              />
+            )}
           </div>
         ))}
 

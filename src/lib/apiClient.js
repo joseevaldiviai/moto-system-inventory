@@ -179,17 +179,21 @@ export const api = {
   cambiarPassword: ({ token, actual, nueva }) =>
     request('/auth/change-password', { method: 'POST', token, body: { actual, nueva } }),
 
-  listarMotos: ({ token, buscar, soloStock } = {}) => {
+  listarMotos: ({ token, buscar, soloStock, scope, puntoVentaId } = {}) => {
     const query = new URLSearchParams();
     if (buscar) query.set('buscar', buscar);
     if (soloStock) query.set('soloStock', 'true');
+    if (scope) query.set('scope', scope);
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/products/motos${suffix}`, { token });
   },
-  listarMotosE: ({ token, buscar, soloStock } = {}) => {
+  listarMotosE: ({ token, buscar, soloStock, scope, puntoVentaId } = {}) => {
     const query = new URLSearchParams();
     if (buscar) query.set('buscar', buscar);
     if (soloStock) query.set('soloStock', 'true');
+    if (scope) query.set('scope', scope);
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/products/motos-e${suffix}`, { token });
   },
@@ -211,9 +215,12 @@ export const api = {
   actualizarMarca: ({ token, id, data }) => request(`/brands/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarMarca: ({ token, id }) => request(`/brands/${id}`, { method: 'DELETE', token }),
 
-  listarAccesorios: ({ token, buscar } = {}) => {
+  listarAccesorios: ({ token, buscar, soloStock, scope, puntoVentaId } = {}) => {
     const query = new URLSearchParams();
     if (buscar) query.set('buscar', buscar);
+    if (soloStock) query.set('soloStock', 'true');
+    if (scope) query.set('scope', scope);
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/products/accesorios${suffix}`, { token });
   },
@@ -224,12 +231,19 @@ export const api = {
     request('/products/accesorios/import', { method: 'POST', token, body: { csvText } }),
   exportarAccesoriosArchivo: ({ token }) => download('/exports/inventory/accesorios', { token, filename: 'accesorios.csv' }),
 
-  listarRepuestos: ({ token, buscar } = {}) => {
+  listarRepuestos: ({ token, buscar, soloStock, scope, puntoVentaId } = {}) => {
     const query = new URLSearchParams();
     if (buscar) query.set('buscar', buscar);
+    if (soloStock) query.set('soloStock', 'true');
+    if (scope) query.set('scope', scope);
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/products/repuestos${suffix}`, { token });
   },
+  listarPuntosVenta: ({ token }) => request('/points', { token }),
+  crearPuntoVenta: ({ token, data }) => request('/points', { method: 'POST', token, body: { data } }),
+  actualizarPuntoVenta: ({ token, id, data }) => request(`/points/${id}`, { method: 'PATCH', token, body: { data } }),
+  transferirInventario: ({ token, data }) => request('/inventory/transfers', { method: 'POST', token, body: { data } }),
   crearRepuesto: ({ token, data }) => request('/products/repuestos', { method: 'POST', token, body: { data } }),
   actualizarRepuesto: ({ token, id, data }) => request(`/products/repuestos/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarRepuesto: ({ token, id }) => request(`/products/repuestos/${id}`, { method: 'DELETE', token }),
@@ -283,7 +297,13 @@ export const api = {
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/reports/quotes${suffix}`, { token });
   },
-  reporteInventario: ({ token }) => request('/reports/inventory', { token }),
+  reporteInventario: ({ token, scope, puntoVentaId } = {}) => {
+    const query = new URLSearchParams();
+    if (scope) query.set('scope', scope);
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/reports/inventory${suffix}`, { token });
+  },
   reporteTramites: ({ token, estado } = {}) => {
     const query = new URLSearchParams();
     if (estado) query.set('estado', estado);
