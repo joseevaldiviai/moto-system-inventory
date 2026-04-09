@@ -12,6 +12,7 @@ import Reportes from './pages/Reportes'
 import Usuarios from './pages/Usuarios'
 import Perfil from './pages/Perfil'
 import Manual from './pages/Manual'
+import UbicacionInventario from './pages/UbicacionInventario'
 
 function PrivateRoute({ children }) {
   const { token, authReady } = useAuthStore()
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="manual"     element={<Manual />} />
           <Route path="perfil"     element={<Perfil />} />
           <Route path="usuarios"   element={<SupervisorRoute><Usuarios /></SupervisorRoute>} />
+          <Route path="ubicaciones/:pointId" element={<SupervisorRoute><UbicacionInventario /></SupervisorRoute>} />
         </Route>
       </Routes>
     </HashRouter>

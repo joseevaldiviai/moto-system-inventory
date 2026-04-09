@@ -14,7 +14,7 @@ export default function Dashboard() {
   useEffect(() => {
     api.reporteInventario({
       token,
-      scope: esSupervisor() ? 'central' : 'point',
+      scope: esSupervisor() ? 'all' : 'point',
       puntoVentaId: !esSupervisor() ? usuario?.punto_venta_id : undefined,
     })
       .then(r => { if (r.ok) setStats(r.data) })
@@ -47,9 +47,9 @@ export default function Dashboard() {
   const cards = stats ? [
     { label:'Motos en stock',    value: stats.motos.total_unidades,      sub:`${stats.motos.items.length} registros`,      color:'#f59e0b', icon:'🏍️' },
     { label:'Motos-E en stock',  value: stats.motos_e.total_unidades,    sub:`${stats.motos_e.items.length} registros`,    color:'#14b8a6', icon:'🔋' },
-    { label:'Accesorios',        value: stats.accesorios.total_unidades,  sub:`${stats.accesorios.items.length} tipos`,     color:'#3b82f6', icon:'🛡️' },
-    { label:'Repuestos',         value: stats.repuestos.total_unidades,   sub:`${stats.repuestos.items.length} tipos`,      color:'#8b5cf6', icon:'⚙️' },
-    { label:'Valor inventario',  value: formatBs(stats.motos.valor_total + stats.motos_e.valor_total + stats.accesorios.valor_total + stats.repuestos.valor_total), sub:'motos + motos-e + accesorios + repuestos', color:'#10b981', icon:'💰' },
+    { label:'Accesorios',        value: stats.accesorios.total_unidades, sub:`${stats.accesorios.items.length} tipos`,     color:'#3b82f6', icon:'🛡️' },
+    { label:'Repuestos',         value: stats.repuestos.total_unidades,  sub:`${stats.repuestos.items.length} tipos`,      color:'#8b5cf6', icon:'⚙️' },
+    { label:'Valor inventario',  value: formatBs(stats.motos.valor_total + stats.motos_e.valor_total + stats.accesorios.valor_total + stats.repuestos.valor_total), sub: esSupervisor() ? 'Total general en todos los almacenes' : 'Inventario del punto actual', color:'#10b981', icon:'💰' },
   ] : []
 
   return (

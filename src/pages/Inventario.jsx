@@ -13,6 +13,7 @@ export default function Inventario() {
   const [selectedPointId, setSelectedPointId] = useState('')
   const [transferForm, setTransferForm] = useState({})
   const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
   const [form, setForm] = useState({})
@@ -26,6 +27,10 @@ export default function Inventario() {
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const getWarehouseLabel = (item) =>
+    item?.punto_venta_tipo === 'CENTRAL'
+      ? 'Almacen central'
+      : (item?.punto_venta_nombre || 'Sin asignar')
   const tabs = [
     { id: 'motos', label: 'Motos' },
     { id: 'motos_e', label: 'Motos-E' },
@@ -46,7 +51,11 @@ export default function Inventario() {
   const load = async () => {
     setLoading(true)
     try {
-      const res = await fetchByTab(tab, inventoryParams || {})
+      const searchValue = search.trim()
+      const res = await fetchByTab(tab, {
+        ...(inventoryParams || {}),
+        ...(tab === 'marcas' || !searchValue ? {} : { buscar: searchValue }),
+      })
       if (res?.ok) {
         setItems(res.data)
         if (tab === 'marcas') setMarcas(res.data)
@@ -54,6 +63,7 @@ export default function Inventario() {
       if (isSup && selectedPointId && tab !== 'marcas') {
         const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
         const pointRes = await fetchByTab(tab, {
+          ...(searchValue ? { buscar: searchValue } : {}),
           scope: selectedPoint?.tipo === 'CENTRAL' ? 'central' : 'point',
           puntoVentaId: selectedPoint?.tipo === 'CENTRAL' ? undefined : selectedPointId,
         })
@@ -66,7 +76,7 @@ export default function Inventario() {
     }
   }
 
-  useEffect(() => { load() }, [tab, token, selectedPointId, usuario?.punto_venta_id])
+  useEffect(() => { load() }, [tab, token, selectedPointId, usuario?.punto_venta_id, search])
   useEffect(() => {
     if (!isSup) return
     api.configGet({ token }).then(r => {
@@ -249,6 +259,10 @@ export default function Inventario() {
     setCsvFileName(file.name)
   }
 
+  const displayedItems = tab === 'marcas' && search.trim()
+    ? items.filter((item) => item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
+    : items
+
   return (
     <div className="page-shell" style={S.page}>
       <div className="page-header">
@@ -283,6 +297,14 @@ export default function Inventario() {
       <div className="grid-main-two">
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Listado</div>
+          <div style={{ marginBottom: 12 }}>
+            <input
+              style={S.input}
+              placeholder={tab === 'marcas' ? 'Buscar marca' : 'Buscar producto'}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
           {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
             <div className="table-wrap list-scroll">
               {tab === 'marcas' ? (
@@ -294,7 +316,7 @@ export default function Inventario() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(m => (
+                    {displayedItems.map(m => (
                       <tr key={m.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{m.nombre}</td>
                         <td style={{ padding: '6px 4px', color: m.activo ? 'var(--text-soft)' : 'var(--text-muted)' }}>
@@ -309,19 +331,21 @@ export default function Inventario() {
                   <thead>
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Producto</th>
+                      <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
                       {isSup && <th style={{ padding: '6px 4px' }}>Asignar a punto</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(it => (
+                    {displayedItems.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>
                           {(tab === 'motos' || tab === 'motos_e')
                             ? `${it.marca} ${it.ano} (${it.chasis})`
                             : `${it.tipo} ${it.marca ? '· ' + it.marca : ''}`}
                         </td>
+                        <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
                         {isSup && (

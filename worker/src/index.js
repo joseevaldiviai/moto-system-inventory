@@ -84,6 +84,11 @@ function mapSessionUser(profile) {
 }
 
 async function resolveInventoryScope({ admin, profile, requestedScope, requestedPointId }) {
+  if (requestedScope === 'all') {
+    if (profile.rol !== 'SUPERVISOR') throw new Error('Solo Supervisor puede ver el inventario general');
+    return { scope: 'all', pointId: null, point: { id: null, nombre: 'Inventario general', tipo: 'GLOBAL' } };
+  }
+
   if (requestedScope === 'central') {
     if (profile.rol !== 'SUPERVISOR') throw new Error('Solo Supervisor puede ver el almacen central');
     const central = await getCentralPoint(admin);
@@ -125,12 +130,69 @@ async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointI
   const config = getInventoryConfig(kind);
   const baseQuery = buildProductSearchQuery(admin, config, buscar);
 
+  if (scope === 'all') {
+    const { data: products, error: productsError } = await baseQuery;
+    if (productsError) throw new Error(productsError.message);
+
+    const productIds = (products || []).map((row) => row.id);
+    const stockMap = new Map();
+
+    if (productIds.length) {
+      let pointStockQuery = admin
+        .from('inventario_puntos_venta')
+        .select('producto_id, cantidad_libre, cantidad_reservada, cantidad_vendida')
+        .eq('producto_tipo', kind)
+        .in('producto_id', productIds);
+
+      const { data: pointStocks, error: pointStockError } = await pointStockQuery;
+      if (pointStockError) throw new Error(pointStockError.message);
+
+      for (const row of pointStocks || []) {
+        const productId = Number(row.producto_id);
+        const current = stockMap.get(productId) || { libre: 0, reservada: 0, vendida: 0 };
+        current.libre += Number(row.cantidad_libre || 0);
+        current.reservada += Number(row.cantidad_reservada || 0);
+        current.vendida += Number(row.cantidad_vendida || 0);
+        stockMap.set(productId, current);
+      }
+    }
+
+    return (products || [])
+      .map((product) => {
+        const pointStock = stockMap.get(Number(product.id)) || { libre: 0, reservada: 0, vendida: 0 };
+        const cantidadLibre = Number(product.cantidad_libre || 0) + pointStock.libre;
+        const cantidadReservada = Number(product.cantidad_reservada || 0) + pointStock.reservada;
+        const cantidadVendida = Number(product.cantidad_vendida || 0) + pointStock.vendida;
+
+        if (soloStock && cantidadLibre <= 0) return null;
+
+        return {
+          ...product,
+          cantidad_libre: cantidadLibre,
+          cantidad_reservada: cantidadReservada,
+          cantidad_vendida: cantidadVendida,
+          punto_venta_id: null,
+          punto_venta_nombre: 'Inventario general',
+          punto_venta_tipo: 'GLOBAL',
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const point = await getPointById(admin, pointId);
+  const pointName = point.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : point.nombre;
+
   if (scope === 'central') {
     let query = baseQuery;
     if (soloStock) query = query.gt('cantidad_libre', 0);
     const { data, error } = await query;
     if (error) throw new Error(error.message);
-    return data || [];
+    return (data || []).map((product) => ({
+      ...product,
+      punto_venta_id: pointId,
+      punto_venta_nombre: pointName,
+      punto_venta_tipo: point.tipo,
+    }));
   }
 
   const { data: products, error: productsError } = await baseQuery;
@@ -162,6 +224,8 @@ async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointI
         cantidad_reservada: Number(stock.cantidad_reservada || 0),
         cantidad_vendida: Number(stock.cantidad_vendida || 0),
         punto_venta_id: pointId,
+        punto_venta_nombre: pointName,
+        punto_venta_tipo: point.tipo,
       };
     })
     .filter(Boolean);
@@ -698,25 +762,106 @@ async function handleInventoryTransfer(request, env) {
   const { data } = await readJson(request);
   const kind = data?.kind;
   const productId = Number(data?.product_id);
-  const pointId = Number(data?.punto_venta_id);
+  const centralPoint = await getCentralPoint(admin);
+  const sourcePointId = Number(data?.source_point_id ?? data?.origen_punto_venta_id ?? data?.sourcePointId ?? centralPoint.id);
+  const destinationPointId = Number(data?.destination_point_id ?? data?.destino_punto_venta_id ?? data?.destinationPointId ?? data?.punto_venta_id);
   const quantity = Number(data?.cantidad);
 
   if (!PRODUCT_TABLES.includes(kind)) return fail('Tipo de inventario no soportado');
   if (!Number.isFinite(productId) || productId <= 0) return fail('Producto invalido');
-  if (!Number.isFinite(pointId) || pointId <= 0) return fail('Punto de venta invalido');
+  if (!Number.isFinite(sourcePointId) || sourcePointId <= 0) return fail('Origen invalido');
+  if (!Number.isFinite(destinationPointId) || destinationPointId <= 0) return fail('Destino invalido');
   if (!Number.isFinite(quantity) || quantity <= 0) return fail('Cantidad invalida');
+  if (sourcePointId === destinationPointId) return fail('El origen y el destino no pueden ser iguales');
 
-  const point = await getPointById(admin, pointId);
-  if (point.tipo === POINT_TYPES.CENTRAL) return fail('Selecciona un punto de venta destino');
-  if (!point.activo) return fail('Punto de venta inactivo');
+  const sourcePoint = await getPointById(admin, sourcePointId);
+  const destinationPoint = await getPointById(admin, destinationPointId);
+  if (!sourcePoint.activo) return fail('Ubicacion origen inactiva');
+  if (!destinationPoint.activo) return fail('Ubicacion destino inactiva');
 
-  const { error } = await admin.rpc('transfer_stock_to_point', {
-    p_punto_venta_id: pointId,
-    p_producto_tipo: kind,
-    p_producto_id: productId,
-    p_cantidad: quantity,
-  });
-  if (error) return fail(error.message);
+  const { data: product, error: productError } = await admin
+    .from(kind)
+    .select('id, activo, cantidad_libre')
+    .eq('id', productId)
+    .single();
+  if (productError || !product || !product.activo) return fail('Producto no encontrado', 404);
+
+  if (sourcePoint.tipo === POINT_TYPES.CENTRAL) {
+    if (Number(product.cantidad_libre || 0) < quantity) return fail('Stock insuficiente en almacen central');
+    const { error } = await admin
+      .from(kind)
+      .update({
+        cantidad_libre: Number(product.cantidad_libre || 0) - quantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', productId)
+      .gte('cantidad_libre', quantity);
+    if (error) return fail(error.message);
+  } else {
+    const { data: sourceStock, error: sourceStockError } = await admin
+      .from('inventario_puntos_venta')
+      .select('id, cantidad_libre')
+      .eq('punto_venta_id', sourcePointId)
+      .eq('producto_tipo', kind)
+      .eq('producto_id', productId)
+      .maybeSingle();
+    if (sourceStockError) return fail(sourceStockError.message);
+    if (!sourceStock || Number(sourceStock.cantidad_libre || 0) < quantity) {
+      return fail('Stock insuficiente en la ubicacion origen');
+    }
+
+    const { error } = await admin
+      .from('inventario_puntos_venta')
+      .update({
+        cantidad_libre: Number(sourceStock.cantidad_libre || 0) - quantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', sourceStock.id);
+    if (error) return fail(error.message);
+  }
+
+  if (destinationPoint.tipo === POINT_TYPES.CENTRAL) {
+    const { error } = await admin
+      .from(kind)
+      .update({
+        cantidad_libre: Number(product.cantidad_libre || 0) + quantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', productId);
+    if (error) return fail(error.message);
+  } else {
+    const { data: destinationStock, error: destinationStockError } = await admin
+      .from('inventario_puntos_venta')
+      .select('id, cantidad_libre')
+      .eq('punto_venta_id', destinationPointId)
+      .eq('producto_tipo', kind)
+      .eq('producto_id', productId)
+      .maybeSingle();
+    if (destinationStockError) return fail(destinationStockError.message);
+
+    if (destinationStock?.id) {
+      const { error } = await admin
+        .from('inventario_puntos_venta')
+        .update({
+          cantidad_libre: Number(destinationStock.cantidad_libre || 0) + quantity,
+          actualizado_en: new Date().toISOString(),
+        })
+        .eq('id', destinationStock.id);
+      if (error) return fail(error.message);
+    } else {
+      const { error } = await admin
+        .from('inventario_puntos_venta')
+        .insert({
+          punto_venta_id: destinationPointId,
+          producto_tipo: kind,
+          producto_id: productId,
+          cantidad_libre: quantity,
+          cantidad_reservada: 0,
+          cantidad_vendida: 0,
+        });
+      if (error) return fail(error.message);
+    }
+  }
 
   return json({ ok: true });
 }
