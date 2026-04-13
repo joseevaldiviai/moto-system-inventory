@@ -429,9 +429,13 @@ export default function Inventario() {
                           <select
                             style={S.input}
                             value={form[key] ?? ''}
-                            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                            onChange={e => setForm(f => ({
+                              ...f,
+                              [key]: e.target.value === '0' ? 0 : e.target.value,
+                            }))}
                           >
-                            {tab !== 'motos' && tab !== 'motos_e' && <option value="">— Sin marca —</option>}
+                            <option value="">Elegir marca</option>
+                            {tab !== 'motos' && tab !== 'motos_e' && <option value="0">— Sin marca —</option>}
                             {marcas.filter(m => m.activo).map(m => (
                               <option key={m.id} value={m.id}>{m.nombre}</option>
                             ))}

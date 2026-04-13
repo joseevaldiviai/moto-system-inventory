@@ -277,7 +277,7 @@ export default function Ventas() {
                 value={itemForm.marca}
                 onChange={e => setItemForm(f => ({ ...f, marca: e.target.value, tipo: '', cilindrada: '', producto_id: '' }))}
               >
-                <option value="">Selecciona</option>
+                <option value="">Elegir marca</option>
                 {marcasDisponibles.map((marca) => (
                   <option key={marca} value={marca}>{marca}</option>
                 ))}

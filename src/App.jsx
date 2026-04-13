@@ -44,11 +44,43 @@ export default function App() {
 
   return (
     <HashRouter>
-      <Toaster position="top-right" toastOptions={{
-        style: { background: 'var(--card)', color: 'var(--text)', border: '1px solid var(--border-strong)' },
-        success: { iconTheme: { primary: 'var(--success)', secondary: 'var(--bg)' } },
-        error:   { iconTheme: { primary: 'var(--danger)', secondary: 'var(--bg)' } },
-      }} />
+      <Toaster
+        position="top-right"
+        gutter={12}
+        toastOptions={{
+          duration: 5000,
+          style: {
+            background: 'var(--card)',
+            color: 'var(--text)',
+            border: '1px solid var(--border-strong)',
+            padding: '16px 18px',
+            fontSize: 15,
+            lineHeight: 1.45,
+            maxWidth: 520,
+            minWidth: 340,
+            boxShadow: '0 18px 48px var(--shadow)',
+          },
+          success: {
+            iconTheme: { primary: 'var(--success)', secondary: 'var(--bg)' },
+          },
+          error: {
+            duration: 7000,
+            iconTheme: { primary: 'var(--danger)', secondary: 'var(--bg)' },
+            style: {
+              background: 'color-mix(in srgb, var(--danger) 16%, var(--card))',
+              color: 'var(--text-strong)',
+              border: '2px solid color-mix(in srgb, var(--danger) 55%, var(--border-strong))',
+              padding: '18px 20px',
+              fontSize: 16,
+              fontWeight: 700,
+              lineHeight: 1.5,
+              maxWidth: 560,
+              minWidth: 360,
+              boxShadow: '0 20px 56px color-mix(in srgb, var(--danger) 24%, transparent)',
+            },
+          },
+        }}
+      />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
