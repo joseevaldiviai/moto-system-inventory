@@ -34,6 +34,20 @@ export function corsHeaders() {
   };
 }
 
+export function withCors(response) {
+  const headers = new Headers(response?.headers || {});
+  const cors = corsHeaders();
+  Object.entries(cors).forEach(([key, value]) => {
+    if (!headers.has(key)) headers.set(key, value);
+  });
+
+  return new Response(response?.body ?? null, {
+    status: response?.status ?? 200,
+    statusText: response?.statusText ?? 'OK',
+    headers,
+  });
+}
+
 export async function readJson(request) {
   const text = await request.text();
   return text ? JSON.parse(text) : {};

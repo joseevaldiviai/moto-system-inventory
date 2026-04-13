@@ -1,4 +1,4 @@
-import { json, empty, readJson, notFound, fail, attachment } from './lib/http';
+import { json, empty, readJson, notFound, fail, attachment, withCors } from './lib/http';
 import { createAdminClient, createPublicClient, requireAuth, requireSupervisor } from './lib/supabase';
 import { getInventoryConfig, normalizeStocks, resolveMarca, validatePricing } from './lib/inventory';
 import { parseCsv, requireColumns, rowObject, requiredNumber, numberOrZero, textOrNull } from './lib/csv';
@@ -1820,99 +1820,99 @@ function notMigrated(name) {
 export default {
   async fetch(request, env) {
     try {
-      if (request.method === 'OPTIONS') return empty();
+      if (request.method === 'OPTIONS') return withCors(empty());
 
       const url = new URL(request.url);
       const path = url.pathname.replace(/\/+$/, '') || '/';
 
       try {
-      if (path === '/health' && request.method === 'GET') return json({ ok: true, service: 'moto-system-api' });
+      if (path === '/health' && request.method === 'GET') return withCors(json({ ok: true, service: 'moto-system-api' }));
 
-      if (path === '/auth/login' && request.method === 'POST') return handleAuthLogin(request, env);
-      if (path === '/auth/refresh' && request.method === 'POST') return handleAuthRefresh(request, env);
-      if (path === '/auth/logout' && request.method === 'POST') return handleAuthLogout(request, env);
-      if (path === '/auth/me' && request.method === 'GET') return handleAuthMe(request, env);
-      if (path === '/auth/change-password' && request.method === 'POST') return handleChangePassword(request, env);
-      if (path === '/auth/seed-admin' && request.method === 'POST') return handleSeedAdmin(request, env);
+      if (path === '/auth/login' && request.method === 'POST') return withCors(await handleAuthLogin(request, env));
+      if (path === '/auth/refresh' && request.method === 'POST') return withCors(await handleAuthRefresh(request, env));
+      if (path === '/auth/logout' && request.method === 'POST') return withCors(await handleAuthLogout(request, env));
+      if (path === '/auth/me' && request.method === 'GET') return withCors(await handleAuthMe(request, env));
+      if (path === '/auth/change-password' && request.method === 'POST') return withCors(await handleChangePassword(request, env));
+      if (path === '/auth/seed-admin' && request.method === 'POST') return withCors(await handleSeedAdmin(request, env));
 
-      if (path === '/config' && request.method === 'GET') return handleConfigGet(request, env);
-      if (path === '/config' && request.method === 'PUT') return handleConfigSet(request, env);
+      if (path === '/config' && request.method === 'GET') return withCors(await handleConfigGet(request, env));
+      if (path === '/config' && request.method === 'PUT') return withCors(await handleConfigSet(request, env));
 
-      if (path === '/users' && request.method === 'GET') return handleUsersList(request, env);
-      if (path === '/users' && request.method === 'POST') return handleUsersCreate(request, env);
-      if (path.startsWith('/users/') && request.method === 'PATCH') return handleUsersUpdate(request, env, path.split('/')[2]);
+      if (path === '/users' && request.method === 'GET') return withCors(await handleUsersList(request, env));
+      if (path === '/users' && request.method === 'POST') return withCors(await handleUsersCreate(request, env));
+      if (path.startsWith('/users/') && request.method === 'PATCH') return withCors(await handleUsersUpdate(request, env, path.split('/')[2]));
 
-      if (path === '/points' && request.method === 'GET') return handlePointsList(request, env);
-      if (path === '/points' && request.method === 'POST') return handlePointsCreate(request, env);
-      if (path.startsWith('/points/') && request.method === 'PATCH') return handlePointsUpdate(request, env, path.split('/')[2]);
+      if (path === '/points' && request.method === 'GET') return withCors(await handlePointsList(request, env));
+      if (path === '/points' && request.method === 'POST') return withCors(await handlePointsCreate(request, env));
+      if (path.startsWith('/points/') && request.method === 'PATCH') return withCors(await handlePointsUpdate(request, env, path.split('/')[2]));
 
-      if (path === '/brands' && request.method === 'GET') return handleBrandsList(request, env);
-      if (path === '/brands' && request.method === 'POST') return handleBrandsCreate(request, env);
-      if (path.startsWith('/brands/') && request.method === 'PATCH') return handleBrandsUpdate(request, env, path.split('/')[2]);
-      if (path.startsWith('/brands/') && request.method === 'DELETE') return handleBrandsDelete(request, env, path.split('/')[2]);
+      if (path === '/brands' && request.method === 'GET') return withCors(await handleBrandsList(request, env));
+      if (path === '/brands' && request.method === 'POST') return withCors(await handleBrandsCreate(request, env));
+      if (path.startsWith('/brands/') && request.method === 'PATCH') return withCors(await handleBrandsUpdate(request, env, path.split('/')[2]));
+      if (path.startsWith('/brands/') && request.method === 'DELETE') return withCors(await handleBrandsDelete(request, env, path.split('/')[2]));
 
-      if (path === '/products/motos' && request.method === 'GET') return handleInventoryList(request, env, 'motos');
-      if (path === '/products/motos' && request.method === 'POST') return handleInventoryCreate(request, env, 'motos');
-      if (path === '/products/motos/import' && request.method === 'POST') return importInventoryCsv(request, env, 'motos');
-      if (path.startsWith('/products/motos/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'motos', path.split('/')[3]);
-      if (path.startsWith('/products/motos/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'motos', path.split('/')[3]);
+      if (path === '/products/motos' && request.method === 'GET') return withCors(await handleInventoryList(request, env, 'motos'));
+      if (path === '/products/motos' && request.method === 'POST') return withCors(await handleInventoryCreate(request, env, 'motos'));
+      if (path === '/products/motos/import' && request.method === 'POST') return withCors(await importInventoryCsv(request, env, 'motos'));
+      if (path.startsWith('/products/motos/') && request.method === 'PATCH') return withCors(await handleInventoryUpdate(request, env, 'motos', path.split('/')[3]));
+      if (path.startsWith('/products/motos/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'motos', path.split('/')[3]));
 
-      if (path === '/products/motos-e' && request.method === 'GET') return handleInventoryList(request, env, 'motos_e');
-      if (path === '/products/motos-e' && request.method === 'POST') return handleInventoryCreate(request, env, 'motos_e');
-      if (path === '/products/motos-e/import' && request.method === 'POST') return importInventoryCsv(request, env, 'motos_e');
-      if (path.startsWith('/products/motos-e/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'motos_e', path.split('/')[3]);
-      if (path.startsWith('/products/motos-e/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'motos_e', path.split('/')[3]);
+      if (path === '/products/motos-e' && request.method === 'GET') return withCors(await handleInventoryList(request, env, 'motos_e'));
+      if (path === '/products/motos-e' && request.method === 'POST') return withCors(await handleInventoryCreate(request, env, 'motos_e'));
+      if (path === '/products/motos-e/import' && request.method === 'POST') return withCors(await importInventoryCsv(request, env, 'motos_e'));
+      if (path.startsWith('/products/motos-e/') && request.method === 'PATCH') return withCors(await handleInventoryUpdate(request, env, 'motos_e', path.split('/')[3]));
+      if (path.startsWith('/products/motos-e/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'motos_e', path.split('/')[3]));
 
-      if (path === '/products/accesorios' && request.method === 'GET') return handleInventoryList(request, env, 'accesorios');
-      if (path === '/products/accesorios' && request.method === 'POST') return handleInventoryCreate(request, env, 'accesorios');
-      if (path === '/products/accesorios/import' && request.method === 'POST') return importInventoryCsv(request, env, 'accesorios');
-      if (path.startsWith('/products/accesorios/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'accesorios', path.split('/')[3]);
-      if (path.startsWith('/products/accesorios/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'accesorios', path.split('/')[3]);
+      if (path === '/products/accesorios' && request.method === 'GET') return withCors(await handleInventoryList(request, env, 'accesorios'));
+      if (path === '/products/accesorios' && request.method === 'POST') return withCors(await handleInventoryCreate(request, env, 'accesorios'));
+      if (path === '/products/accesorios/import' && request.method === 'POST') return withCors(await importInventoryCsv(request, env, 'accesorios'));
+      if (path.startsWith('/products/accesorios/') && request.method === 'PATCH') return withCors(await handleInventoryUpdate(request, env, 'accesorios', path.split('/')[3]));
+      if (path.startsWith('/products/accesorios/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'accesorios', path.split('/')[3]));
 
-      if (path === '/products/repuestos' && request.method === 'GET') return handleInventoryList(request, env, 'repuestos');
-      if (path === '/products/repuestos' && request.method === 'POST') return handleInventoryCreate(request, env, 'repuestos');
-      if (path === '/products/repuestos/import' && request.method === 'POST') return importInventoryCsv(request, env, 'repuestos');
-      if (path.startsWith('/products/repuestos/') && request.method === 'PATCH') return handleInventoryUpdate(request, env, 'repuestos', path.split('/')[3]);
-      if (path.startsWith('/products/repuestos/') && request.method === 'DELETE') return handleInventoryDelete(request, env, 'repuestos', path.split('/')[3]);
+      if (path === '/products/repuestos' && request.method === 'GET') return withCors(await handleInventoryList(request, env, 'repuestos'));
+      if (path === '/products/repuestos' && request.method === 'POST') return withCors(await handleInventoryCreate(request, env, 'repuestos'));
+      if (path === '/products/repuestos/import' && request.method === 'POST') return withCors(await importInventoryCsv(request, env, 'repuestos'));
+      if (path.startsWith('/products/repuestos/') && request.method === 'PATCH') return withCors(await handleInventoryUpdate(request, env, 'repuestos', path.split('/')[3]));
+      if (path.startsWith('/products/repuestos/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'repuestos', path.split('/')[3]));
 
-      if (path === '/inventory/transfers' && request.method === 'POST') return handleInventoryTransfer(request, env);
+      if (path === '/inventory/transfers' && request.method === 'POST') return withCors(await handleInventoryTransfer(request, env));
 
-      if (path === '/quotes' && request.method === 'GET') return handleQuotesList(request, env);
-      if (path === '/quotes' && request.method === 'POST') return handleQuotesCreate(request, env);
-      if (path.startsWith('/quotes/') && request.method === 'GET' && !path.endsWith('/cancel')) return handleQuotesGet(request, env, path.split('/')[2]);
-      if (path.startsWith('/quotes/') && request.method === 'POST' && path.endsWith('/cancel')) return handleQuotesCancel(request, env, path.split('/')[2]);
+      if (path === '/quotes' && request.method === 'GET') return withCors(await handleQuotesList(request, env));
+      if (path === '/quotes' && request.method === 'POST') return withCors(await handleQuotesCreate(request, env));
+      if (path.startsWith('/quotes/') && request.method === 'GET' && !path.endsWith('/cancel')) return withCors(await handleQuotesGet(request, env, path.split('/')[2]));
+      if (path.startsWith('/quotes/') && request.method === 'POST' && path.endsWith('/cancel')) return withCors(await handleQuotesCancel(request, env, path.split('/')[2]));
 
-      if (path === '/sales' && request.method === 'GET') return handleSalesList(request, env);
-      if (path === '/sales' && request.method === 'POST') return handleSalesCreate(request, env);
-      if (path.startsWith('/sales/') && request.method === 'GET' && !path.endsWith('/cancel')) return handleSalesGet(request, env, path.split('/')[2]);
-      if (path.startsWith('/sales/') && request.method === 'POST' && path.endsWith('/cancel')) return handleSalesCancel(request, env, path.split('/')[2]);
+      if (path === '/sales' && request.method === 'GET') return withCors(await handleSalesList(request, env));
+      if (path === '/sales' && request.method === 'POST') return withCors(await handleSalesCreate(request, env));
+      if (path.startsWith('/sales/') && request.method === 'GET' && !path.endsWith('/cancel')) return withCors(await handleSalesGet(request, env, path.split('/')[2]));
+      if (path.startsWith('/sales/') && request.method === 'POST' && path.endsWith('/cancel')) return withCors(await handleSalesCancel(request, env, path.split('/')[2]));
 
-      if (path === '/tramites' && request.method === 'GET') return handleTramitesList(request, env);
-      if (path === '/tramites' && request.method === 'POST') return handleTramitesCreate(request, env);
-      if (path.startsWith('/tramites/') && request.method === 'PATCH') return handleTramitesUpdate(request, env, path.split('/')[2]);
+      if (path === '/tramites' && request.method === 'GET') return withCors(await handleTramitesList(request, env));
+      if (path === '/tramites' && request.method === 'POST') return withCors(await handleTramitesCreate(request, env));
+      if (path.startsWith('/tramites/') && request.method === 'PATCH') return withCors(await handleTramitesUpdate(request, env, path.split('/')[2]));
 
-      if (path === '/exports/backup' && request.method === 'GET') return handleBackupExport(request, env);
-      if (path === '/exports/manual' && request.method === 'GET') return handleManualExport();
-      if (path.startsWith('/exports/quotes/') && request.method === 'GET') return handleQuoteExport(request, env, path.split('/')[3]);
-      if (path === '/exports/inventory/motos' && request.method === 'GET') return handleInventoryExport(request, env, 'motos');
-      if (path === '/exports/inventory/motos-e' && request.method === 'GET') return handleInventoryExport(request, env, 'motos_e');
-      if (path === '/exports/inventory/accesorios' && request.method === 'GET') return handleInventoryExport(request, env, 'accesorios');
-      if (path === '/exports/inventory/repuestos' && request.method === 'GET') return handleInventoryExport(request, env, 'repuestos');
-      if (path === '/exports/inventory/productos' && request.method === 'GET') return handleInventoryExport(request, env, 'productos');
+      if (path === '/exports/backup' && request.method === 'GET') return withCors(await handleBackupExport(request, env));
+      if (path === '/exports/manual' && request.method === 'GET') return withCors(await handleManualExport());
+      if (path.startsWith('/exports/quotes/') && request.method === 'GET') return withCors(await handleQuoteExport(request, env, path.split('/')[3]));
+      if (path === '/exports/inventory/motos' && request.method === 'GET') return withCors(await handleInventoryExport(request, env, 'motos'));
+      if (path === '/exports/inventory/motos-e' && request.method === 'GET') return withCors(await handleInventoryExport(request, env, 'motos_e'));
+      if (path === '/exports/inventory/accesorios' && request.method === 'GET') return withCors(await handleInventoryExport(request, env, 'accesorios'));
+      if (path === '/exports/inventory/repuestos' && request.method === 'GET') return withCors(await handleInventoryExport(request, env, 'repuestos'));
+      if (path === '/exports/inventory/productos' && request.method === 'GET') return withCors(await handleInventoryExport(request, env, 'productos'));
 
-      if (path === '/reports/inventory' && request.method === 'GET') return handleInventoryReport(request, env);
-      if (path === '/reports/sales' && request.method === 'GET') return handleSalesReport(request, env);
-      if (path === '/reports/quotes' && request.method === 'GET') return handleQuotesReport(request, env);
-      if (path === '/reports/tramites' && request.method === 'GET') return handleTramitesReport(request, env);
-      if (path === '/exports/reports/sales' && request.method === 'GET') return handleSalesReportExport(request, env);
-      if (path === '/exports/reports/quotes' && request.method === 'GET') return handleQuotesReportExport(request, env);
-      if (path === '/exports/reports/tramites' && request.method === 'GET') return handleTramitesReportExport(request, env);
+      if (path === '/reports/inventory' && request.method === 'GET') return withCors(await handleInventoryReport(request, env));
+      if (path === '/reports/sales' && request.method === 'GET') return withCors(await handleSalesReport(request, env));
+      if (path === '/reports/quotes' && request.method === 'GET') return withCors(await handleQuotesReport(request, env));
+      if (path === '/reports/tramites' && request.method === 'GET') return withCors(await handleTramitesReport(request, env));
+      if (path === '/exports/reports/sales' && request.method === 'GET') return withCors(await handleSalesReportExport(request, env));
+      if (path === '/exports/reports/quotes' && request.method === 'GET') return withCors(await handleQuotesReportExport(request, env));
+      if (path === '/exports/reports/tramites' && request.method === 'GET') return withCors(await handleTramitesReportExport(request, env));
 
       if (path.startsWith('/reports/') || path.endsWith('/export/pdf')) {
-        return notMigrated(path);
+        return withCors(notMigrated(path));
       }
 
-      return notFound();
+      return withCors(notFound());
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const status = message === 'Se requiere rol de Supervisor'
@@ -1926,11 +1926,11 @@ export default {
             : 500;
 
         console.error('Worker request error', { path, message });
-        return fail(error, status);
+        return withCors(fail(error, status));
       }
     } catch (error) {
       console.error('Worker fatal error', error);
-      return fail(error, 500);
+      return withCors(fail(error, 500));
     }
   },
 };
