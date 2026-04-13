@@ -66,7 +66,7 @@ export default function UbicacionInventario() {
   }, [token, pointId, point, tab, search])
 
   const handleTransfer = async (itemId) => {
-    const current = transferForm[itemId] || {}
+    const current = transferForm[itemId] || { cantidad: '1' }
     if (!current.destination_point_id) return toast.error('Selecciona el destino')
     if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
 
@@ -85,7 +85,7 @@ export default function UbicacionInventario() {
     toast.success('Producto movido')
     setTransferForm((state) => ({
       ...state,
-      [itemId]: { destination_point_id: state[itemId]?.destination_point_id || '', cantidad: '' },
+      [itemId]: { destination_point_id: state[itemId]?.destination_point_id || '', cantidad: '1' },
     }))
 
     const params = {
@@ -183,7 +183,7 @@ export default function UbicacionInventario() {
                             min="1"
                             max={it.cantidad_libre}
                             placeholder="Cantidad"
-                            value={transferForm[it.id]?.cantidad ?? ''}
+                            value={transferForm[it.id]?.cantidad ?? '1'}
                             onChange={(e) => setTransferForm((state) => ({
                               ...state,
                               [it.id]: { ...(state[it.id] || {}), cantidad: e.target.value },

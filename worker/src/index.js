@@ -187,12 +187,18 @@ async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointI
     if (soloStock) query = query.gt('cantidad_libre', 0);
     const { data, error } = await query;
     if (error) throw new Error(error.message);
-    return (data || []).map((product) => ({
-      ...product,
-      punto_venta_id: pointId,
-      punto_venta_nombre: pointName,
-      punto_venta_tipo: point.tipo,
-    }));
+    return (data || [])
+      .filter((product) => (
+        Number(product.cantidad_libre || 0) > 0
+        || Number(product.cantidad_reservada || 0) > 0
+        || Number(product.cantidad_vendida || 0) > 0
+      ))
+      .map((product) => ({
+        ...product,
+        punto_venta_id: pointId,
+        punto_venta_nombre: pointName,
+        punto_venta_tipo: point.tipo,
+      }));
   }
 
   const { data: products, error: productsError } = await baseQuery;

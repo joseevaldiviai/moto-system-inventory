@@ -184,7 +184,7 @@ export default function Inventario() {
   }
 
   const handleTransfer = async (itemId) => {
-    const current = transferForm[itemId] || { punto_venta_id: defaultTransferPointId, cantidad: '' }
+    const current = transferForm[itemId] || { punto_venta_id: defaultTransferPointId, cantidad: '1' }
     if (!current.punto_venta_id) return toast.error('Selecciona un punto de venta')
     if (!activeDestinationPoints.some((point) => String(point.id) === String(current.punto_venta_id))) {
       return toast.error('Selecciona un punto de venta activo')
@@ -201,7 +201,7 @@ export default function Inventario() {
     })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Stock transferido al punto de venta')
-    setTransferForm((state) => ({ ...state, [itemId]: { ...state[itemId], cantidad: '' } }))
+    setTransferForm((state) => ({ ...state, [itemId]: { ...state[itemId], cantidad: '1' } }))
     load()
   }
 
@@ -381,7 +381,7 @@ export default function Inventario() {
                                   min="1"
                                   max={it.cantidad_libre}
                                   placeholder="Cantidad"
-                                  value={transferForm[it.id]?.cantidad ?? ''}
+                                  value={transferForm[it.id]?.cantidad ?? '1'}
                                   onChange={e => setTransferForm(state => ({
                                     ...state,
                                     [it.id]: { ...(state[it.id] || {}), cantidad: e.target.value },
