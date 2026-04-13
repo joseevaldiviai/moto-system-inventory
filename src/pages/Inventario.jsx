@@ -21,8 +21,12 @@ export default function Inventario() {
   const [config, setConfig] = useState({ bsisa: '', placa: '' })
 
   const isSup = esSupervisor()
+  const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
   const inventoryParams = isSup
-    ? { scope: 'central' }
+    ? {
+        scope: selectedPoint?.tipo === 'CENTRAL' ? 'central' : 'point',
+        puntoVentaId: selectedPoint?.tipo === 'CENTRAL' ? undefined : selectedPointId || undefined,
+      }
     : usuario?.punto_venta_id
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
@@ -63,7 +67,6 @@ export default function Inventario() {
         if (tab === 'marcas') setMarcas(res.data)
       }
       if (isSup && selectedPointId && tab !== 'marcas') {
-        const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
         const pointRes = await fetchByTab(tab, {
           ...(searchValue ? { buscar: searchValue } : {}),
           scope: selectedPoint?.tipo === 'CENTRAL' ? 'central' : 'point',
@@ -275,7 +278,9 @@ export default function Inventario() {
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Productos</h1>
         <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
           {isSup
-            ? 'Registro y control del almacen central'
+            ? selectedPointId
+              ? `Registro y control de ${selectedPoint?.tipo === 'CENTRAL' ? 'almacen central' : (selectedPoint?.nombre || 'la ubicacion seleccionada')}`
+              : 'Registro y control del inventario'
             : usuario?.punto_venta_nombre
               ? `Stock asignado a ${usuario.punto_venta_nombre}`
               : 'Este vendedor no tiene punto de venta asignado'}
