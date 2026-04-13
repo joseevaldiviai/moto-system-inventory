@@ -23,10 +23,7 @@ export default function Inventario() {
   const isSup = esSupervisor()
   const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
   const inventoryParams = isSup
-    ? {
-        scope: selectedPoint?.tipo === 'CENTRAL' ? 'central' : 'point',
-        puntoVentaId: selectedPoint?.tipo === 'CENTRAL' ? undefined : selectedPointId || undefined,
-      }
+    ? { scope: 'all' }
     : usuario?.punto_venta_id
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
@@ -278,9 +275,7 @@ export default function Inventario() {
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Productos</h1>
         <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
           {isSup
-            ? selectedPointId
-              ? `Registro y control de ${selectedPoint?.tipo === 'CENTRAL' ? 'almacen central' : (selectedPoint?.nombre || 'la ubicacion seleccionada')}`
-              : 'Registro y control del inventario'
+            ? 'Registro y control del inventario general por ubicacion'
             : usuario?.punto_venta_nombre
               ? `Stock asignado a ${usuario.punto_venta_nombre}`
               : 'Este vendedor no tiene punto de venta asignado'}

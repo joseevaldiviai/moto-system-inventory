@@ -135,12 +135,19 @@ async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointI
     if (productsError) throw new Error(productsError.message);
 
     const productIds = (products || []).map((row) => row.id);
-    const stockMap = new Map();
+    const pointMap = new Map();
+    const stockRowsMap = new Map();
+
+    const { data: points, error: pointsError } = await admin
+      .from('puntos_venta')
+      .select('id, nombre, tipo, activo');
+    if (pointsError) throw new Error(pointsError.message);
+    for (const point of points || []) pointMap.set(Number(point.id), point);
 
     if (productIds.length) {
       let pointStockQuery = admin
         .from('inventario_puntos_venta')
-        .select('producto_id, cantidad_libre, cantidad_reservada, cantidad_vendida')
+        .select('punto_venta_id, producto_id, cantidad_libre, cantidad_reservada, cantidad_vendida')
         .eq('producto_tipo', kind)
         .in('producto_id', productIds);
 
@@ -149,32 +156,55 @@ async function listInventoryRows({ admin, kind, buscar, soloStock, scope, pointI
 
       for (const row of pointStocks || []) {
         const productId = Number(row.producto_id);
-        const current = stockMap.get(productId) || { libre: 0, reservada: 0, vendida: 0 };
-        current.libre += Number(row.cantidad_libre || 0);
-        current.reservada += Number(row.cantidad_reservada || 0);
-        current.vendida += Number(row.cantidad_vendida || 0);
-        stockMap.set(productId, current);
+        const rows = stockRowsMap.get(productId) || [];
+        rows.push(row);
+        stockRowsMap.set(productId, rows);
       }
     }
 
     return (products || [])
-      .map((product) => {
-        const pointStock = stockMap.get(Number(product.id)) || { libre: 0, reservada: 0, vendida: 0 };
-        const cantidadLibre = Number(product.cantidad_libre || 0) + pointStock.libre;
-        const cantidadReservada = Number(product.cantidad_reservada || 0) + pointStock.reservada;
-        const cantidadVendida = Number(product.cantidad_vendida || 0) + pointStock.vendida;
+      .flatMap((product) => {
+        const rows = [];
+        const centralLibre = Number(product.cantidad_libre || 0);
+        const centralReservada = Number(product.cantidad_reservada || 0);
+        const centralVendida = Number(product.cantidad_vendida || 0);
+        const hasCentralPresence = centralLibre > 0 || centralReservada > 0 || centralVendida > 0;
 
-        if (soloStock && cantidadLibre <= 0) return null;
+        if (!soloStock || centralLibre > 0) {
+          if (hasCentralPresence) {
+            rows.push({
+              ...product,
+              cantidad_libre: centralLibre,
+              cantidad_reservada: centralReservada,
+              cantidad_vendida: centralVendida,
+              punto_venta_id: null,
+              punto_venta_nombre: 'Almacen Central',
+              punto_venta_tipo: POINT_TYPES.CENTRAL,
+            });
+          }
+        }
 
-        return {
-          ...product,
-          cantidad_libre: cantidadLibre,
-          cantidad_reservada: cantidadReservada,
-          cantidad_vendida: cantidadVendida,
-          punto_venta_id: null,
-          punto_venta_nombre: 'Inventario general',
-          punto_venta_tipo: 'GLOBAL',
-        };
+        for (const stock of stockRowsMap.get(Number(product.id)) || []) {
+          const point = pointMap.get(Number(stock.punto_venta_id));
+          const cantidadLibre = Number(stock.cantidad_libre || 0);
+          const cantidadReservada = Number(stock.cantidad_reservada || 0);
+          const cantidadVendida = Number(stock.cantidad_vendida || 0);
+          const hasPresence = cantidadLibre > 0 || cantidadReservada > 0 || cantidadVendida > 0;
+
+          if ((!soloStock || cantidadLibre > 0) && hasPresence) {
+            rows.push({
+              ...product,
+              cantidad_libre: cantidadLibre,
+              cantidad_reservada: cantidadReservada,
+              cantidad_vendida: cantidadVendida,
+              punto_venta_id: point?.id ?? Number(stock.punto_venta_id),
+              punto_venta_nombre: point?.nombre || 'Punto de venta',
+              punto_venta_tipo: point?.tipo || POINT_TYPES.POS,
+            });
+          }
+        }
+
+        return rows;
       })
       .filter(Boolean);
   }
