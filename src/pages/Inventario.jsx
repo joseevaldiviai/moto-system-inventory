@@ -38,6 +38,8 @@ export default function Inventario() {
     { id: 'repuestos', label: 'Repuestos' },
     ...(isSup ? [{ id: 'marcas', label: 'Marcas' }] : []),
   ]
+  const activeDestinationPoints = puntos.filter((point) => point.tipo !== 'CENTRAL' && point.activo)
+  const defaultTransferPointId = activeDestinationPoints[0] ? String(activeDestinationPoints[0].id) : ''
 
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
@@ -179,8 +181,11 @@ export default function Inventario() {
   }
 
   const handleTransfer = async (itemId) => {
-    const current = transferForm[itemId] || { punto_venta_id: selectedPointId, cantidad: '' }
+    const current = transferForm[itemId] || { punto_venta_id: defaultTransferPointId, cantidad: '' }
     if (!current.punto_venta_id) return toast.error('Selecciona un punto de venta')
+    if (!activeDestinationPoints.some((point) => String(point.id) === String(current.punto_venta_id))) {
+      return toast.error('Selecciona un punto de venta activo')
+    }
     if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
     const res = await api.transferirInventario({
       token,
@@ -353,14 +358,14 @@ export default function Inventario() {
                             <div style={{ display: 'grid', gap: 6 }}>
                               <select
                                 style={S.input}
-                                value={transferForm[it.id]?.punto_venta_id ?? selectedPointId}
+                                value={transferForm[it.id]?.punto_venta_id ?? defaultTransferPointId}
                                 onChange={e => setTransferForm(state => ({
                                   ...state,
                                   [it.id]: { ...(state[it.id] || {}), punto_venta_id: e.target.value },
                                 }))}
                               >
                                 <option value="">Selecciona punto</option>
-                                {puntos.filter(point => point.tipo !== 'CENTRAL' && point.activo).map(point => (
+                                {activeDestinationPoints.map(point => (
                                   <option key={point.id} value={point.id}>{point.nombre}</option>
                                 ))}
                               </select>

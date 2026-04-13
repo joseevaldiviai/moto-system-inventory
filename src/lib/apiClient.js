@@ -1,5 +1,34 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8787';
 
+function isBrowserRuntime() {
+  return typeof window !== 'undefined' && typeof window.location !== 'undefined';
+}
+
+function getApiOrigin() {
+  try {
+    return new URL(API_BASE_URL, isBrowserRuntime() ? window.location.origin : undefined);
+  } catch {
+    return null;
+  }
+}
+
+function getApiConnectionError(error) {
+  const message = error instanceof Error ? error.message : 'No se pudo conectar con la API';
+  const apiUrl = getApiOrigin();
+  const runningOnHttps = isBrowserRuntime() && window.location.protocol === 'https:';
+  const pointsToLocalhost = apiUrl && ['127.0.0.1', 'localhost'].includes(apiUrl.hostname);
+
+  if (runningOnHttps && pointsToLocalhost) {
+    return `No se pudo conectar con la API configurada en ${API_BASE_URL}. Esta version publicada apunta a una API local. Configura VITE_API_BASE_URL con la URL publica del Worker y vuelve a desplegar.`;
+  }
+
+  if (message === 'Failed to fetch') {
+    return `No se pudo conectar con la API en ${API_BASE_URL}. Verifica que el Worker este disponible y que VITE_API_BASE_URL sea correcta.`;
+  }
+
+  return message;
+}
+
 function getStoredSession() {
   return {
     token: localStorage.getItem('token'),
@@ -103,7 +132,7 @@ async function request(path, options = {}) {
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'No se pudo conectar con la API',
+      error: getApiConnectionError(error),
     };
   }
 }
@@ -155,14 +184,25 @@ async function download(path, { token, filename } = {}) {
   return { ok: true, path: link.download };
 }
 
+async function safeDownload(path, options = {}) {
+  try {
+    return await download(path, options);
+  } catch (error) {
+    return {
+      ok: false,
+      error: getApiConnectionError(error),
+    };
+  }
+}
+
 function notMigrated(name) {
   return async () => ({ ok: false, error: `${name} aun no esta migrado en la API web` });
 }
 
 export const api = {
-  backup: ({ token }) => download('/exports/backup', { token, filename: 'moto-system-backup.json' }),
+  backup: ({ token }) => safeDownload('/exports/backup', { token, filename: 'moto-system-backup.json' }),
   version: async () => ({ ok: true, data: { version: 'web-migration' } }),
-  exportManualPdf: () => download('/exports/manual', { filename: 'manual-moto-system.html' }),
+  exportManualPdf: () => safeDownload('/exports/manual', { filename: 'manual-moto-system.html' }),
 
   configGet: ({ token }) => request('/config', { token }),
   configSet: ({ token, data }) => request('/config', { method: 'PUT', token, body: { data } }),
@@ -207,8 +247,8 @@ export const api = {
     request('/products/motos/import', { method: 'POST', token, body: { csvText } }),
   importarMotosECsv: ({ token, csvText }) =>
     request('/products/motos-e/import', { method: 'POST', token, body: { csvText } }),
-  exportarMotosArchivo: ({ token }) => download('/exports/inventory/motos', { token, filename: 'motos.csv' }),
-  exportarMotosEArchivo: ({ token }) => download('/exports/inventory/motos-e', { token, filename: 'motos-e.csv' }),
+  exportarMotosArchivo: ({ token }) => safeDownload('/exports/inventory/motos', { token, filename: 'motos.csv' }),
+  exportarMotosEArchivo: ({ token }) => safeDownload('/exports/inventory/motos-e', { token, filename: 'motos-e.csv' }),
 
   listarMarcas: ({ token }) => request('/brands', { token }),
   crearMarca: ({ token, data }) => request('/brands', { method: 'POST', token, body: { data } }),
@@ -229,7 +269,7 @@ export const api = {
   eliminarAccesorio: ({ token, id }) => request(`/products/accesorios/${id}`, { method: 'DELETE', token }),
   importarAccesoriosCsv: ({ token, csvText }) =>
     request('/products/accesorios/import', { method: 'POST', token, body: { csvText } }),
-  exportarAccesoriosArchivo: ({ token }) => download('/exports/inventory/accesorios', { token, filename: 'accesorios.csv' }),
+  exportarAccesoriosArchivo: ({ token }) => safeDownload('/exports/inventory/accesorios', { token, filename: 'accesorios.csv' }),
 
   listarRepuestos: ({ token, buscar, soloStock, scope, puntoVentaId } = {}) => {
     const query = new URLSearchParams();
@@ -249,8 +289,8 @@ export const api = {
   eliminarRepuesto: ({ token, id }) => request(`/products/repuestos/${id}`, { method: 'DELETE', token }),
   importarRepuestosCsv: ({ token, csvText }) =>
     request('/products/repuestos/import', { method: 'POST', token, body: { csvText } }),
-  exportarRepuestosArchivo: ({ token }) => download('/exports/inventory/repuestos', { token, filename: 'repuestos.csv' }),
-  exportarProductosArchivo: ({ token }) => download('/exports/inventory/productos', { token, filename: 'productos.csv' }),
+  exportarRepuestosArchivo: ({ token }) => safeDownload('/exports/inventory/repuestos', { token, filename: 'repuestos.csv' }),
+  exportarProductosArchivo: ({ token }) => safeDownload('/exports/inventory/productos', { token, filename: 'productos.csv' }),
 
   listarTramites: ({ token, estado } = {}) => {
     const query = new URLSearchParams();
@@ -272,7 +312,7 @@ export const api = {
   obtenerProforma: ({ token, id }) => request(`/quotes/${id}`, { token }),
   crearProforma: ({ token, data }) => request('/quotes', { method: 'POST', token, body: { data } }),
   cancelarProforma: ({ token, id }) => request(`/quotes/${id}/cancel`, { method: 'POST', token }),
-  exportarProformaArchivo: ({ token, id }) => download(`/exports/quotes/${id}`, { token, filename: `proforma-${id}.html` }),
+  exportarProformaArchivo: ({ token, id }) => safeDownload(`/exports/quotes/${id}`, { token, filename: `proforma-${id}.html` }),
 
   listarVentas: ({ token }) => request('/sales', { token }),
   obtenerVenta: ({ token, id }) => request(`/sales/${id}`, { token }),
@@ -317,7 +357,7 @@ export const api = {
     if (usuario_id) query.set('usuario_id', usuario_id);
     if (tipo_producto) query.set('tipo_producto', tipo_producto);
     const suffix = query.toString() ? `?${query}` : '';
-    return download(`/exports/reports/sales${suffix}`, { token, filename: 'reporte-ventas.csv' });
+    return safeDownload(`/exports/reports/sales${suffix}`, { token, filename: 'reporte-ventas.csv' });
   },
   exportarReporteProformasArchivo: ({ token, fechaInicio, fechaFin, usuario_id, tipo_producto } = {}) => {
     const query = new URLSearchParams();
@@ -326,14 +366,14 @@ export const api = {
     if (usuario_id) query.set('usuario_id', usuario_id);
     if (tipo_producto) query.set('tipo_producto', tipo_producto);
     const suffix = query.toString() ? `?${query}` : '';
-    return download(`/exports/reports/quotes${suffix}`, { token, filename: 'reporte-proformas.csv' });
+    return safeDownload(`/exports/reports/quotes${suffix}`, { token, filename: 'reporte-proformas.csv' });
   },
 
   exportarReporteTramitesArchivo: ({ token, estado } = {}) => {
     const query = new URLSearchParams();
     if (estado) query.set('estado', estado);
     const suffix = query.toString() ? `?${query}` : '';
-    return download(`/exports/reports/tramites${suffix}`, { token, filename: 'reporte-tramites.csv' });
+    return safeDownload(`/exports/reports/tramites${suffix}`, { token, filename: 'reporte-tramites.csv' });
   },
 };
 
