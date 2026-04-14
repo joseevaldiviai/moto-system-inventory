@@ -13,7 +13,8 @@ export default function UbicacionInventario() {
   const [point, setPoint] = useState(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState('name-asc')
+  const [sortField, setSortField] = useState('name')
+  const [sortDirection, setSortDirection] = useState('asc')
   const [transferForm, setTransferForm] = useState({})
 
   const S = {
@@ -32,13 +33,48 @@ export default function UbicacionInventario() {
   const getModelLabel = (item) => item?.tipo || item?.ano || '-'
   const getCylinderLabel = (item) => item?.cilindrada || '-'
   const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getCylinderLabel(item)}`.trim()
-  const sortedItems = [...items].sort((a, b) => {
-    if (sortBy === 'qty-asc') return Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
-    if (sortBy === 'qty-desc') return Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+  const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
+  const buildGroupKey = (item) => ([
+    normalizeGroupValue(item?.marca),
+    normalizeGroupValue(item?.tipo),
+    normalizeGroupValue(item?.ano),
+    normalizeGroupValue(item?.color),
+    normalizeGroupValue(item?.cilindrada),
+    normalizeGroupValue(item?.motor),
+  ].join('||'))
+  const groupedItems = (() => {
+    const grouped = new Map()
+    for (const row of items) {
+      const key = buildGroupKey(row)
+      const existing = grouped.get(key)
+      if (existing) {
+        existing.cantidad_libre += Number(row?.cantidad_libre || 0)
+        existing.cantidad_reservada += Number(row?.cantidad_reservada || 0)
+        existing.cantidad_vendida += Number(row?.cantidad_vendida || 0)
+        existing.sourceIds.push(row.id)
+        continue
+      }
+      grouped.set(key, {
+        ...row,
+        groupKey: key,
+        sourceIds: [row.id],
+        cantidad_libre: Number(row?.cantidad_libre || 0),
+        cantidad_reservada: Number(row?.cantidad_reservada || 0),
+        cantidad_vendida: Number(row?.cantidad_vendida || 0),
+      })
+    }
+    return [...grouped.values()]
+  })()
+  const sortedItems = [...groupedItems].sort((a, b) => {
+    if (sortField === 'qty') {
+      return sortDirection === 'asc'
+        ? Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
+        : Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+    }
     const left = getItemName(a).toLocaleLowerCase('es')
     const right = getItemName(b).toLocaleLowerCase('es')
     if (left === right) return 0
-    if (sortBy === 'name-desc') return left < right ? 1 : -1
+    if (sortDirection === 'desc') return left < right ? 1 : -1
     return left > right ? 1 : -1
   })
 
@@ -78,8 +114,12 @@ export default function UbicacionInventario() {
       .finally(() => setLoading(false))
   }, [token, pointId, point, tab, search])
 
-  const handleTransfer = async (itemId) => {
-    const current = transferForm[itemId] || { cantidad: '1' }
+  const handleTransfer = async (item) => {
+    const transferKey = item.groupKey || String(item.id)
+    if ((item.sourceIds?.length || 1) > 1) {
+      return toast.error('Este grupo contiene varios registros. Mueve el stock desde un detalle mas especifico.')
+    }
+    const current = transferForm[transferKey] || { cantidad: '1' }
     if (!current.destination_point_id) return toast.error('Selecciona el destino')
     if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
 
@@ -87,7 +127,7 @@ export default function UbicacionInventario() {
       token,
       data: {
         kind: tab,
-        product_id: itemId,
+        product_id: item.id,
         source_point_id: Number(pointId),
         destination_point_id: Number(current.destination_point_id),
         cantidad: Number(current.cantidad),
@@ -98,7 +138,7 @@ export default function UbicacionInventario() {
     toast.success('Producto movido')
     setTransferForm((state) => ({
       ...state,
-      [itemId]: { destination_point_id: state[itemId]?.destination_point_id || '', cantidad: '1' },
+      [transferKey]: { destination_point_id: state[transferKey]?.destination_point_id || '', cantidad: '1' },
     }))
 
     const params = {
@@ -151,13 +191,23 @@ export default function UbicacionInventario() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <select style={S.input} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="name-asc">Nombre ascendente</option>
-            <option value="name-desc">Nombre descendente</option>
-            <option value="qty-asc">Cantidad ascendente</option>
-            <option value="qty-desc">Cantidad descendente</option>
-          </select>
+        <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Ordenar por</div>
+            <select style={S.input} value={sortField} onChange={(e) => setSortField(e.target.value)}>
+              <option value="name">Nombre</option>
+              <option value="qty">Cantidad</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSortDirection((value) => value === 'asc' ? 'desc' : 'asc')}
+            style={{ ...S.btn, minWidth: 48, padding: '8px 12px', fontSize: 16, lineHeight: 1 }}
+            aria-label={sortDirection === 'asc' ? 'Orden ascendente' : 'Orden descendente'}
+            title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
+          >
+            {sortDirection === 'asc' ? '↑' : '↓'}
+          </button>
         </div>
         {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
           <div className="table-wrap list-scroll">
@@ -184,10 +234,10 @@ export default function UbicacionInventario() {
                       <div style={{ display: 'grid', gap: 6 }}>
                         <select
                           style={S.input}
-                          value={transferForm[it.id]?.destination_point_id ?? ''}
+                          value={transferForm[it.groupKey || it.id]?.destination_point_id ?? ''}
                           onChange={(e) => setTransferForm((state) => ({
                             ...state,
-                            [it.id]: { ...(state[it.id] || {}), destination_point_id: e.target.value },
+                            [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), destination_point_id: e.target.value },
                           }))}
                         >
                           <option value="">Selecciona destino</option>
@@ -204,13 +254,13 @@ export default function UbicacionInventario() {
                             min="1"
                             max={it.cantidad_libre}
                             placeholder="Cantidad"
-                            value={transferForm[it.id]?.cantidad ?? '1'}
+                            value={transferForm[it.groupKey || it.id]?.cantidad ?? '1'}
                             onChange={(e) => setTransferForm((state) => ({
                               ...state,
-                              [it.id]: { ...(state[it.id] || {}), cantidad: e.target.value },
+                              [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), cantidad: e.target.value },
                             }))}
                           />
-                          <button onClick={() => handleTransfer(it.id)} style={S.btn}>Mover</button>
+                          <button onClick={() => handleTransfer(it)} style={S.btn}>Mover</button>
                         </div>
                       </div>
                     </td>

@@ -14,8 +14,10 @@ export default function Inventario() {
   const [transferForm, setTransferForm] = useState({})
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  const [sortBy, setSortBy] = useState('name-asc')
-  const [pointSortBy, setPointSortBy] = useState('name-asc')
+  const [sortField, setSortField] = useState('name')
+  const [sortDirection, setSortDirection] = useState('asc')
+  const [pointSortField, setPointSortField] = useState('name')
+  const [pointSortDirection, setPointSortDirection] = useState('asc')
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
   const [form, setForm] = useState({})
@@ -33,15 +35,51 @@ export default function Inventario() {
   const getModelLabel = (item) => item?.tipo || item?.ano || '-'
   const getCylinderLabel = (item) => item?.cilindrada || '-'
   const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getCylinderLabel(item)}`.trim()
-  const sortInventoryRows = (rows, mode) => {
+  const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
+  const buildGroupKey = (item, includeWarehouse = false) => ([
+    normalizeGroupValue(item?.marca),
+    normalizeGroupValue(item?.tipo),
+    normalizeGroupValue(item?.ano),
+    normalizeGroupValue(item?.color),
+    normalizeGroupValue(item?.cilindrada),
+    normalizeGroupValue(item?.motor),
+    includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
+  ].join('||'))
+  const groupInventoryRows = (rows, includeWarehouse = false) => {
+    const grouped = new Map()
+    for (const row of rows) {
+      const key = buildGroupKey(row, includeWarehouse)
+      const existing = grouped.get(key)
+      if (existing) {
+        existing.cantidad_libre += Number(row?.cantidad_libre || 0)
+        existing.cantidad_reservada += Number(row?.cantidad_reservada || 0)
+        existing.cantidad_vendida += Number(row?.cantidad_vendida || 0)
+        existing.sourceIds.push(row.id)
+        continue
+      }
+      grouped.set(key, {
+        ...row,
+        groupKey: key,
+        sourceIds: [row.id],
+        cantidad_libre: Number(row?.cantidad_libre || 0),
+        cantidad_reservada: Number(row?.cantidad_reservada || 0),
+        cantidad_vendida: Number(row?.cantidad_vendida || 0),
+      })
+    }
+    return [...grouped.values()]
+  }
+  const sortInventoryRows = (rows, field, direction) => {
     const list = [...rows]
     list.sort((a, b) => {
-      if (mode === 'qty-asc') return Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
-      if (mode === 'qty-desc') return Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+      if (field === 'qty') {
+        return direction === 'asc'
+          ? Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
+          : Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+      }
       const left = getItemName(a).toLocaleLowerCase('es')
       const right = getItemName(b).toLocaleLowerCase('es')
       if (left === right) return 0
-      if (mode === 'name-desc') return left < right ? 1 : -1
+      if (direction === 'desc') return left < right ? 1 : -1
       return left > right ? 1 : -1
     })
     return list
@@ -198,8 +236,12 @@ export default function Inventario() {
     toast.success('Costos actualizados')
   }
 
-  const handleTransfer = async (itemId) => {
-    const current = transferForm[itemId] || { punto_venta_id: defaultTransferPointId, cantidad: '1' }
+  const handleTransfer = async (item) => {
+    const transferKey = item.groupKey || String(item.id)
+    if ((item.sourceIds?.length || 1) > 1) {
+      return toast.error('Este grupo contiene varios registros. Mueve el stock desde un detalle mas especifico.')
+    }
+    const current = transferForm[transferKey] || { punto_venta_id: defaultTransferPointId, cantidad: '1' }
     if (!current.punto_venta_id) return toast.error('Selecciona un punto de venta')
     if (!activeDestinationPoints.some((point) => String(point.id) === String(current.punto_venta_id))) {
       return toast.error('Selecciona un punto de venta activo')
@@ -209,14 +251,14 @@ export default function Inventario() {
       token,
       data: {
         kind: tab,
-        product_id: itemId,
+        product_id: item.id,
         punto_venta_id: Number(current.punto_venta_id),
         cantidad: Number(current.cantidad),
       },
     })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Stock transferido al punto de venta')
-    setTransferForm((state) => ({ ...state, [itemId]: { ...state[itemId], cantidad: '1' } }))
+    setTransferForm((state) => ({ ...state, [transferKey]: { ...state[transferKey], cantidad: '1' } }))
     load()
   }
 
@@ -285,8 +327,10 @@ export default function Inventario() {
   const displayedItems = tab === 'marcas' && search.trim()
     ? items.filter((item) => item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
     : items
-  const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(displayedItems, sortBy)
-  const sortedPointItems = sortInventoryRows(pointItems, pointSortBy)
+  const groupedDisplayedItems = tab === 'marcas' ? displayedItems : groupInventoryRows(displayedItems, true)
+  const groupedPointItems = groupInventoryRows(pointItems, false)
+  const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedDisplayedItems, sortField, sortDirection)
+  const sortedPointItems = sortInventoryRows(groupedPointItems, pointSortField, pointSortDirection)
 
   return (
     <div className="page-shell" style={S.page}>
@@ -331,13 +375,23 @@ export default function Inventario() {
             />
           </div>
           {tab !== 'marcas' && (
-            <div style={{ marginBottom: 12 }}>
-              <select style={S.input} value={sortBy} onChange={e => setSortBy(e.target.value)}>
-                <option value="name-asc">Nombre ascendente</option>
-                <option value="name-desc">Nombre descendente</option>
-                <option value="qty-asc">Cantidad ascendente</option>
-                <option value="qty-desc">Cantidad descendente</option>
-              </select>
+            <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <div style={S.label}>Ordenar por</div>
+                <select style={S.input} value={sortField} onChange={e => setSortField(e.target.value)}>
+                  <option value="name">Nombre</option>
+                  <option value="qty">Cantidad</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSortDirection(value => value === 'asc' ? 'desc' : 'asc')}
+                style={{ ...S.btn, minWidth: 48, padding: '8px 12px', fontSize: 16, lineHeight: 1 }}
+                aria-label={sortDirection === 'asc' ? 'Orden ascendente' : 'Orden descendente'}
+                title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
+              >
+                {sortDirection === 'asc' ? '↑' : '↓'}
+              </button>
             </div>
           )}
           {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
@@ -388,10 +442,10 @@ export default function Inventario() {
                             <div style={{ display: 'grid', gap: 6 }}>
                               <select
                                 style={S.input}
-                                value={transferForm[it.id]?.punto_venta_id ?? defaultTransferPointId}
+                                value={transferForm[it.groupKey || it.id]?.punto_venta_id ?? defaultTransferPointId}
                                 onChange={e => setTransferForm(state => ({
                                   ...state,
-                                  [it.id]: { ...(state[it.id] || {}), punto_venta_id: e.target.value },
+                                  [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), punto_venta_id: e.target.value },
                                 }))}
                               >
                                 <option value="">Selecciona punto</option>
@@ -406,13 +460,13 @@ export default function Inventario() {
                                   min="1"
                                   max={it.cantidad_libre}
                                   placeholder="Cantidad"
-                                  value={transferForm[it.id]?.cantidad ?? '1'}
+                                  value={transferForm[it.groupKey || it.id]?.cantidad ?? '1'}
                                   onChange={e => setTransferForm(state => ({
                                     ...state,
-                                    [it.id]: { ...(state[it.id] || {}), cantidad: e.target.value },
+                                    [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), cantidad: e.target.value },
                                   }))}
                                 />
-                                <button onClick={() => handleTransfer(it.id)} style={S.btn}>Asignar</button>
+                                <button onClick={() => handleTransfer(it)} style={S.btn}>Asignar</button>
                               </div>
                             </div>
                           </td>
@@ -499,14 +553,23 @@ export default function Inventario() {
                     ))}
                   </select>
                 </div>
-                <div style={{ marginBottom: 10 }}>
-                  <div style={S.label}>Ordenar</div>
-                  <select style={S.input} value={pointSortBy} onChange={e => setPointSortBy(e.target.value)}>
-                    <option value="name-asc">Nombre ascendente</option>
-                    <option value="name-desc">Nombre descendente</option>
-                    <option value="qty-asc">Cantidad ascendente</option>
-                    <option value="qty-desc">Cantidad descendente</option>
-                  </select>
+                <div style={{ marginBottom: 10, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+                  <div>
+                    <div style={S.label}>Ordenar por</div>
+                    <select style={S.input} value={pointSortField} onChange={e => setPointSortField(e.target.value)}>
+                      <option value="name">Nombre</option>
+                      <option value="qty">Cantidad</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPointSortDirection(value => value === 'asc' ? 'desc' : 'asc')}
+                    style={{ ...S.btn, minWidth: 48, padding: '8px 12px', fontSize: 16, lineHeight: 1 }}
+                    aria-label={pointSortDirection === 'asc' ? 'Orden ascendente' : 'Orden descendente'}
+                    title={pointSortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
+                  >
+                    {pointSortDirection === 'asc' ? '↑' : '↓'}
+                  </button>
                 </div>
                 {!selectedPointId ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona una ubicacion para revisar el stock.</div>
@@ -522,6 +585,11 @@ export default function Inventario() {
                         <div style={{ color: 'var(--text-soft)' }}>
                           Libre: {item.cantidad_libre} · Reservado: {item.cantidad_reservada} · Vendido: {item.cantidad_vendida}
                         </div>
+                        {(item.sourceIds?.length || 1) > 1 && (
+                          <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                            Grupo consolidado de {item.sourceIds.length} registros.
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
