@@ -4,15 +4,24 @@ import toast from 'react-hot-toast'
 import DatePickerInput from '../components/DatePickerInput'
 import { api } from '../lib/apiClient'
 
+const INITIAL_ITEM_FORM = {
+  producto: 'moto',
+  marca: '',
+  producto_id: '',
+  cantidad: 1,
+  descuento_pct: 0,
+}
+
 export default function Proformas() {
   const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
   const [motos, setMotos] = useState([])
   const [accesorios, setAccesorios] = useState([])
   const [repuestos, setRepuestos] = useState([])
+  const [marcas, setMarcas] = useState([])
   const [items, setItems] = useState([])
   const [cliente, setCliente] = useState({ nombre: '', ci_nit: '', celular: '' })
-  const [itemForm, setItemForm] = useState({ producto: 'moto', marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })
+  const [itemForm, setItemForm] = useState(INITIAL_ITEM_FORM)
   const [fechaLimite, setFechaLimite] = useState('')
   const [filtroProformas, setFiltroProformas] = useState({ fecha: '', numero: '' })
   const [detalle, setDetalle] = useState(null)
@@ -33,14 +42,16 @@ export default function Proformas() {
       setRepuestos([])
       return
     }
-    const [m, a, r] = await Promise.all([
+    const [m, a, r, marcasRes] = await Promise.all([
       api.listarMotos({ token, soloStock: true, ...inventoryParams }),
       api.listarAccesorios({ token, soloStock: true, ...inventoryParams }),
       api.listarRepuestos({ token, soloStock: true, ...inventoryParams }),
+      api.listarMarcas({ token }),
     ])
     if (m.ok) setMotos(m.data)
     if (a.ok) setAccesorios(a.data)
     if (r.ok) setRepuestos(r.data)
+    if (marcasRes.ok) setMarcas(marcasRes.data.filter((marca) => marca.activo))
   }
 
   const loadProformas = async (filters = filtroProformas) => {
@@ -58,7 +69,7 @@ export default function Proformas() {
       setAccesorios([])
       setRepuestos([])
     }
-    const [p, m, a, r] = await Promise.all([
+    const [p, m, a, r, marcasRes] = await Promise.all([
       api.listarProformas({
         token,
         fecha: filtroProformas.fecha || undefined,
@@ -67,11 +78,13 @@ export default function Proformas() {
       inventoryParams ? api.listarMotos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarAccesorios({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarRepuestos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      api.listarMarcas({ token }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
     if (a.ok) setAccesorios(a.data)
     if (r.ok) setRepuestos(r.data)
+    if (marcasRes.ok) setMarcas(marcasRes.data.filter((marca) => marca.activo))
   }
 
   useEffect(() => { load() }, [])
@@ -107,14 +120,10 @@ export default function Proformas() {
       ? accesorios
       : repuestos
 
-  const marcasDisponibles = [...new Set(catalogoActual.map((p) => p.marca).filter(Boolean))].sort()
-  const productosPorMarca = catalogoActual.filter((p) => !itemForm.marca || p.marca === itemForm.marca)
-  const tiposDisponibles = [...new Set(productosPorMarca.map((p) => p.tipo).filter(Boolean))].sort()
-  const productosPorTipo = productosPorMarca.filter((p) => !itemForm.tipo || p.tipo === itemForm.tipo)
-  const cilindradasDisponibles = itemForm.producto === 'moto'
-    ? [...new Set(productosPorTipo.map((p) => p.cilindrada).filter(Boolean))].sort()
+  const marcasDisponibles = marcas.map((marca) => marca.nombre).sort((a, b) => a.localeCompare(b))
+  const productosFiltrados = itemForm.marca
+    ? catalogoActual.filter((p) => p.marca === itemForm.marca)
     : []
-  const productosFiltrados = productosPorTipo.filter((p) => itemForm.producto !== 'moto' || !itemForm.cilindrada || p.cilindrada === itemForm.cilindrada)
 
   const formatProductoOption = (producto) => {
     if (itemForm.producto === 'moto') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
@@ -265,11 +274,11 @@ export default function Proformas() {
 
           <div className="grid-four" style={{ marginTop: 12 }}>
             <div>
-              <div style={S.label}>Producto</div>
+              <div style={S.label}>Tipo producto</div>
               <select
                 style={S.input}
                 value={itemForm.producto}
-                onChange={e => setItemForm({ producto: e.target.value, marca: '', tipo: '', cilindrada: '', producto_id: '', cantidad: 1, descuento_pct: 0 })}
+                onChange={e => setItemForm({ ...INITIAL_ITEM_FORM, producto: e.target.value })}
               >
                 <option value="moto">Moto</option>
                 <option value="accesorio">Accesorio</option>
@@ -281,7 +290,7 @@ export default function Proformas() {
               <select
                 style={S.input}
                 value={itemForm.marca}
-                onChange={e => setItemForm(f => ({ ...f, marca: e.target.value, tipo: '', cilindrada: '', producto_id: '' }))}
+                onChange={e => setItemForm(f => ({ ...f, marca: e.target.value, producto_id: '' }))}
               >
                 <option value="">Elegir marca</option>
                 {marcasDisponibles.map((marca) => (
@@ -290,40 +299,14 @@ export default function Proformas() {
               </select>
             </div>
             <div>
-              <div style={S.label}>Tipo</div>
+              <div style={S.label}>Producto</div>
               <select
                 style={S.input}
-                value={itemForm.tipo}
-                onChange={e => setItemForm(f => ({ ...f, tipo: e.target.value, cilindrada: '', producto_id: '' }))}
-              >
-                <option value="">Selecciona</option>
-                {tiposDisponibles.map((tipo) => (
-                  <option key={tipo} value={tipo}>{tipo}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div style={S.label}>Cilindrada</div>
-              <select
-                style={S.input}
-                value={itemForm.cilindrada}
-                disabled={itemForm.producto !== 'moto'}
-                onChange={e => setItemForm(f => ({ ...f, cilindrada: e.target.value, producto_id: '' }))}
-              >
-                <option value="">{itemForm.producto === 'moto' ? 'Selecciona' : 'No aplica'}</option>
-                {cilindradasDisponibles.map((cilindrada) => (
-                  <option key={cilindrada} value={cilindrada}>{cilindrada}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div style={S.label}>Opción</div>
-              <select
-                style={S.input}
+                disabled={!itemForm.marca}
                 value={itemForm.producto_id}
                 onChange={e => setItemForm(f => ({ ...f, producto_id: e.target.value }))}
               >
-                <option value="">Selecciona</option>
+                <option value="">{itemForm.marca ? 'Selecciona producto' : 'Primero elige marca'}</option>
                 {productosFiltrados.map((producto) => (
                   <option key={producto.id} value={producto.id}>{formatProductoOption(producto)}</option>
                 ))}
