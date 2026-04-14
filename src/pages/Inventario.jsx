@@ -14,6 +14,8 @@ export default function Inventario() {
   const [transferForm, setTransferForm] = useState({})
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('name-asc')
+  const [pointSortBy, setPointSortBy] = useState('name-asc')
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
   const [form, setForm] = useState({})
@@ -28,6 +30,22 @@ export default function Inventario() {
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const getModelLabel = (item) => item?.tipo || item?.ano || '-'
+  const getCylinderLabel = (item) => item?.cilindrada || '-'
+  const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getCylinderLabel(item)}`.trim()
+  const sortInventoryRows = (rows, mode) => {
+    const list = [...rows]
+    list.sort((a, b) => {
+      if (mode === 'qty-asc') return Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
+      if (mode === 'qty-desc') return Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+      const left = getItemName(a).toLocaleLowerCase('es')
+      const right = getItemName(b).toLocaleLowerCase('es')
+      if (left === right) return 0
+      if (mode === 'name-desc') return left < right ? 1 : -1
+      return left > right ? 1 : -1
+    })
+    return list
+  }
   const getWarehouseLabel = (item) =>
     item?.punto_venta_tipo === 'CENTRAL'
       ? 'Almacen central'
@@ -212,12 +230,12 @@ export default function Inventario() {
 
   const fieldsByTab = {
     motos: [
-      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Tipo'],['color','Color'],['chasis','Chasis'],
+      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Modelo'],['color','Color'],['chasis','Chasis'],
       ['cilindrada','Cilindrada'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     motos_e: [
-      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Tipo'],['color','Color'],['chasis','Chasis'],
+      ['marca_id','Marca','marca'],['ano','Año'],['tipo','Modelo'],['color','Color'],['chasis','Chasis'],
       ['potencia','Potencia'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
@@ -267,6 +285,8 @@ export default function Inventario() {
   const displayedItems = tab === 'marcas' && search.trim()
     ? items.filter((item) => item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
     : items
+  const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(displayedItems, sortBy)
+  const sortedPointItems = sortInventoryRows(pointItems, pointSortBy)
 
   return (
     <div className="page-shell" style={S.page}>
@@ -310,6 +330,16 @@ export default function Inventario() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
+          {tab !== 'marcas' && (
+            <div style={{ marginBottom: 12 }}>
+              <select style={S.input} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                <option value="name-asc">Nombre ascendente</option>
+                <option value="name-desc">Nombre descendente</option>
+                <option value="qty-asc">Cantidad ascendente</option>
+                <option value="qty-desc">Cantidad descendente</option>
+              </select>
+            </div>
+          )}
           {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
             <div className="table-wrap list-scroll">
               {tab === 'marcas' ? (
@@ -335,7 +365,9 @@ export default function Inventario() {
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
-                      <th style={{ padding: '6px 4px' }}>Producto</th>
+                      <th style={{ padding: '6px 4px' }}>Marca</th>
+                      <th style={{ padding: '6px 4px' }}>Modelo</th>
+                      <th style={{ padding: '6px 4px' }}>Cilindrada</th>
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
@@ -343,13 +375,11 @@ export default function Inventario() {
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedItems.map(it => (
+                    {sortedDisplayedItems.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
-                        <td style={{ padding: '6px 4px' }}>
-                          {(tab === 'motos' || tab === 'motos_e')
-                            ? `${it.marca} ${it.ano} (${it.chasis})`
-                            : `${it.tipo} ${it.marca ? '· ' + it.marca : ''}`}
-                        </td>
+                        <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                        <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
+                        <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
@@ -469,18 +499,25 @@ export default function Inventario() {
                     ))}
                   </select>
                 </div>
+                <div style={{ marginBottom: 10 }}>
+                  <div style={S.label}>Ordenar</div>
+                  <select style={S.input} value={pointSortBy} onChange={e => setPointSortBy(e.target.value)}>
+                    <option value="name-asc">Nombre ascendente</option>
+                    <option value="name-desc">Nombre descendente</option>
+                    <option value="qty-asc">Cantidad ascendente</option>
+                    <option value="qty-desc">Cantidad descendente</option>
+                  </select>
+                </div>
                 {!selectedPointId ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona una ubicacion para revisar el stock.</div>
                 ) : pointItems.length === 0 ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Sin stock asignado en esta categoría.</div>
                 ) : (
                   <div className="list-scroll" style={{ maxHeight: 240 }}>
-                    {pointItems.map((item) => (
+                    {sortedPointItems.map((item) => (
                       <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)', fontSize: 12 }}>
                         <div style={{ color: 'var(--text-strong)' }}>
-                          {(tab === 'motos' || tab === 'motos_e')
-                            ? `${item.marca} ${item.ano} (${item.chasis})`
-                            : `${item.tipo}${item.marca ? ` · ${item.marca}` : ''}`}
+                          {`${item.marca || '-'} · ${getModelLabel(item)} · ${getCylinderLabel(item)}`}
                         </div>
                         <div style={{ color: 'var(--text-soft)' }}>
                           Libre: {item.cantidad_libre} · Reservado: {item.cantidad_reservada} · Vendido: {item.cantidad_vendida}

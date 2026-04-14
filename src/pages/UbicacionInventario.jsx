@@ -13,6 +13,7 @@ export default function UbicacionInventario() {
   const [point, setPoint] = useState(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('name-asc')
   const [transferForm, setTransferForm] = useState({})
 
   const S = {
@@ -28,6 +29,18 @@ export default function UbicacionInventario() {
     { id: 'repuestos', label: 'Repuestos' },
   ]
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const getModelLabel = (item) => item?.tipo || item?.ano || '-'
+  const getCylinderLabel = (item) => item?.cilindrada || '-'
+  const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getCylinderLabel(item)}`.trim()
+  const sortedItems = [...items].sort((a, b) => {
+    if (sortBy === 'qty-asc') return Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
+    if (sortBy === 'qty-desc') return Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+    const left = getItemName(a).toLocaleLowerCase('es')
+    const right = getItemName(b).toLocaleLowerCase('es')
+    if (left === right) return 0
+    if (sortBy === 'name-desc') return left < right ? 1 : -1
+    return left > right ? 1 : -1
+  })
 
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
@@ -138,25 +151,33 @@ export default function UbicacionInventario() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <select style={S.input} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="name-asc">Nombre ascendente</option>
+            <option value="name-desc">Nombre descendente</option>
+            <option value="qty-asc">Cantidad ascendente</option>
+            <option value="qty-desc">Cantidad descendente</option>
+          </select>
+        </div>
         {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
           <div className="table-wrap list-scroll">
             <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
-                  <th style={{ padding: '6px 4px' }}>Producto</th>
+                  <th style={{ padding: '6px 4px' }}>Marca</th>
+                  <th style={{ padding: '6px 4px' }}>Modelo</th>
+                  <th style={{ padding: '6px 4px' }}>Cilindrada</th>
                   <th style={{ padding: '6px 4px' }}>Stock</th>
                   <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
                   <th style={{ padding: '6px 4px' }}>Mover a</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {sortedItems.map((it) => (
                   <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
-                    <td style={{ padding: '6px 4px' }}>
-                      {(tab === 'motos' || tab === 'motos_e')
-                        ? `${it.marca} ${it.ano} (${it.chasis})`
-                        : `${it.tipo}${it.marca ? ` · ${it.marca}` : ''}`}
-                    </td>
+                    <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                    <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
+                    <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
                     <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                     <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
                     <td style={{ padding: '6px 4px', minWidth: 260 }}>
