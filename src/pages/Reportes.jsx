@@ -103,6 +103,7 @@ export default function Reportes() {
               <select style={S.input} value={filtro.tipo_producto} onChange={e => setFiltro(f => ({ ...f, tipo_producto: e.target.value }))}>
                 <option value="">Todos</option>
                 <option value="moto">Moto</option>
+                <option value="moto_e">Moto-E</option>
                 <option value="accesorio">Accesorio</option>
                 <option value="repuesto">Repuesto</option>
               </select>

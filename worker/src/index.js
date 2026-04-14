@@ -1400,7 +1400,7 @@ async function handleTramitesList(request, env) {
 
   let query = admin
     .from('tramites')
-    .select('id, venta_item_id, tipo, nombre, marca, costo_total, cobro_en_venta, a_cuenta, saldo, estado, observaciones, creado_en, actualizado_en, venta_items!inner(id, moto_id, motos(marca, ano))')
+    .select('id, venta_item_id, tipo, nombre, marca, costo_total, cobro_en_venta, a_cuenta, saldo, estado, observaciones, creado_en, actualizado_en, venta_items!inner(id, moto_id, moto_e_id, motos(marca, ano), motos_e(marca, ano))')
     .order('creado_en', { ascending: false });
 
   if (estado) query = query.eq('estado', estado);
@@ -1412,8 +1412,8 @@ async function handleTramitesList(request, env) {
     ok: true,
     data: (data || []).map((row) => ({
       ...row,
-      moto_marca: row.venta_items?.motos?.marca ?? null,
-      moto_modelo: row.venta_items?.motos?.ano ?? null,
+      moto_marca: row.venta_items?.motos?.marca ?? row.venta_items?.motos_e?.marca ?? null,
+      moto_modelo: row.venta_items?.motos?.ano ?? row.venta_items?.motos_e?.ano ?? null,
       venta_items: undefined,
     })),
   });
@@ -1490,7 +1490,7 @@ async function handleSalesReport(request, env) {
 
   let query = admin
     .from('ventas')
-    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre), venta_items!inner(moto_id, accesorio_id, repuesto_id)')
+    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre), venta_items!inner(moto_id, moto_e_id, accesorio_id, repuesto_id)')
     .order('fecha_venta', { ascending: false });
 
   if (fechaInicio) query = query.gte('fecha_venta', `${fechaInicio}T00:00:00`);
@@ -1518,6 +1518,7 @@ async function handleSalesReport(request, env) {
     ventas = ventas.filter((row) =>
       (row.venta_items || []).some((item) => (
         (tipoProducto === 'moto' && item.moto_id) ||
+        (tipoProducto === 'moto_e' && item.moto_e_id) ||
         (tipoProducto === 'accesorio' && item.accesorio_id) ||
         (tipoProducto === 'repuesto' && item.repuesto_id)
       ))
@@ -1554,7 +1555,7 @@ async function handleQuotesReport(request, env) {
 
   let query = admin
     .from('proformas')
-    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_creacion, user_profiles!proformas_vendedor_id_fkey(nombre), proforma_items!inner(moto_id, accesorio_id, repuesto_id)')
+    .select('id, codigo, vendedor_id, punto_venta_id, cliente_nombre, subtotal, total_descuentos, total, estado, fecha_creacion, user_profiles!proformas_vendedor_id_fkey(nombre), proforma_items!inner(moto_id, moto_e_id, accesorio_id, repuesto_id)')
     .order('fecha_creacion', { ascending: false });
 
   if (fechaInicio) query = query.gte('fecha_creacion', `${fechaInicio}T00:00:00`);
@@ -1582,6 +1583,7 @@ async function handleQuotesReport(request, env) {
     proformas = proformas.filter((row) =>
       (row.proforma_items || []).some((item) => (
         (tipoProducto === 'moto' && item.moto_id) ||
+        (tipoProducto === 'moto_e' && item.moto_e_id) ||
         (tipoProducto === 'accesorio' && item.accesorio_id) ||
         (tipoProducto === 'repuesto' && item.repuesto_id)
       ))

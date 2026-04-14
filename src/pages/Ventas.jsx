@@ -15,6 +15,7 @@ export default function Ventas() {
   const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
   const [motos, setMotos] = useState([])
+  const [motosE, setMotosE] = useState([])
   const [accesorios, setAccesorios] = useState([])
   const [repuestos, setRepuestos] = useState([])
   const [marcas, setMarcas] = useState([])
@@ -34,15 +35,17 @@ export default function Ventas() {
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   const load = async () => {
-    const [p, m, a, r, marcasRes] = await Promise.all([
+    const [p, m, me, a, r, marcasRes] = await Promise.all([
       api.listarProformas({ token, estado: 'ACTIVA' }),
       inventoryParams ? api.listarMotos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarMotosE({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarAccesorios({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarRepuestos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       api.listarMarcas({ token }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
+    if (me.ok) setMotosE(me.data)
     if (a.ok) setAccesorios(a.data)
     if (r.ok) setRepuestos(r.data)
     if (marcasRes.ok) setMarcas(marcasRes.data.filter((marca) => marca.activo))
@@ -62,6 +65,8 @@ export default function Ventas() {
 
   const catalogoActual = itemForm.producto === 'moto'
     ? motos
+    : itemForm.producto === 'moto_e'
+      ? motosE
     : itemForm.producto === 'accesorio'
       ? accesorios
       : repuestos
@@ -74,6 +79,7 @@ export default function Ventas() {
   const getProducto = (producto, id) => {
     if (!id) return null
     if (producto === 'moto') return motos.find(m => m.id === id) || null
+    if (producto === 'moto_e') return motosE.find(m => m.id === id) || null
     if (producto === 'accesorio') return accesorios.find(a => a.id === id) || null
     return repuestos.find(r => r.id === id) || null
   }
@@ -81,12 +87,12 @@ export default function Ventas() {
   const productoLabel = (producto, id) => {
     const selected = getProducto(producto, id)
     if (!selected) return ''
-    if (producto === 'moto') return `${selected.marca} ${selected.ano ?? selected.modelo}`.trim()
+    if (producto === 'moto' || producto === 'moto_e') return `${selected.marca} ${selected.ano ?? selected.modelo}`.trim()
     return `${selected.marca ? `${selected.marca} ` : ''}${selected.tipo}`.trim()
   }
 
   const formatProductoOption = (producto) => {
-    if (itemForm.producto === 'moto') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
+    if (itemForm.producto === 'moto' || itemForm.producto === 'moto_e') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
     return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
   }
 
@@ -103,6 +109,7 @@ export default function Ventas() {
       _tramites: { bsisa: false, placa: false },
     }
     if (itemForm.producto === 'moto') payload.moto_id = productoId
+    if (itemForm.producto === 'moto_e') payload.moto_e_id = productoId
     if (itemForm.producto === 'accesorio') payload.accesorio_id = productoId
     if (itemForm.producto === 'repuesto') payload.repuesto_id = productoId
 
@@ -127,7 +134,7 @@ export default function Ventas() {
   }
 
   const getUnitSalePrice = (item) => {
-    const productId = item.moto_id || item.accesorio_id || item.repuesto_id
+    const productId = item.moto_id || item.moto_e_id || item.accesorio_id || item.repuesto_id
     const producto = getProducto(item._tipo_producto, productId)
     if (!producto) return 0
     const baseSalePrice = producto.precio_venta ?? producto.precio_final ?? 0
@@ -154,6 +161,7 @@ export default function Ventas() {
         descripcion: item.descripcion,
       }
       if (item.moto_id) payload.moto_id = item.moto_id
+      if (item.moto_e_id) payload.moto_e_id = item.moto_e_id
       if (item.accesorio_id) payload.accesorio_id = item.accesorio_id
       if (item.repuesto_id) payload.repuesto_id = item.repuesto_id
       if (item.moto_id) {
@@ -273,6 +281,7 @@ export default function Ventas() {
                 onChange={e => setItemForm({ ...INITIAL_ITEM_FORM, producto: e.target.value })}
               >
                 <option value="moto">Moto</option>
+                <option value="moto_e">Moto-E</option>
                 <option value="accesorio">Accesorio</option>
                 <option value="repuesto">Repuesto</option>
               </select>

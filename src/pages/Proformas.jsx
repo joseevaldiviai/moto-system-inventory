@@ -16,6 +16,7 @@ export default function Proformas() {
   const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
   const [motos, setMotos] = useState([])
+  const [motosE, setMotosE] = useState([])
   const [accesorios, setAccesorios] = useState([])
   const [repuestos, setRepuestos] = useState([])
   const [marcas, setMarcas] = useState([])
@@ -38,17 +39,20 @@ export default function Proformas() {
   const loadCatalogos = async () => {
     if (!inventoryParams) {
       setMotos([])
+      setMotosE([])
       setAccesorios([])
       setRepuestos([])
       return
     }
-    const [m, a, r, marcasRes] = await Promise.all([
+    const [m, me, a, r, marcasRes] = await Promise.all([
       api.listarMotos({ token, soloStock: true, ...inventoryParams }),
+      api.listarMotosE({ token, soloStock: true, ...inventoryParams }),
       api.listarAccesorios({ token, soloStock: true, ...inventoryParams }),
       api.listarRepuestos({ token, soloStock: true, ...inventoryParams }),
       api.listarMarcas({ token }),
     ])
     if (m.ok) setMotos(m.data)
+    if (me.ok) setMotosE(me.data)
     if (a.ok) setAccesorios(a.data)
     if (r.ok) setRepuestos(r.data)
     if (marcasRes.ok) setMarcas(marcasRes.data.filter((marca) => marca.activo))
@@ -66,22 +70,25 @@ export default function Proformas() {
   const load = async () => {
     if (!inventoryParams) {
       setMotos([])
+      setMotosE([])
       setAccesorios([])
       setRepuestos([])
     }
-    const [p, m, a, r, marcasRes] = await Promise.all([
+    const [p, m, me, a, r, marcasRes] = await Promise.all([
       api.listarProformas({
         token,
         fecha: filtroProformas.fecha || undefined,
         numero: filtroProformas.numero || undefined,
       }),
       inventoryParams ? api.listarMotos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
+      inventoryParams ? api.listarMotosE({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarAccesorios({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       inventoryParams ? api.listarRepuestos({ token, soloStock: true, ...inventoryParams }) : Promise.resolve({ ok: true, data: [] }),
       api.listarMarcas({ token }),
     ])
     if (p.ok) setProformas(p.data)
     if (m.ok) setMotos(m.data)
+    if (me.ok) setMotosE(me.data)
     if (a.ok) setAccesorios(a.data)
     if (r.ok) setRepuestos(r.data)
     if (marcasRes.ok) setMarcas(marcasRes.data.filter((marca) => marca.activo))
@@ -99,6 +106,10 @@ export default function Proformas() {
       const p = motos.find(m => m.id === id)
       return p ? `${p.marca} ${p.ano ?? p.modelo}`.trim() : ''
     }
+    if (producto === 'moto_e') {
+      const p = motosE.find(m => m.id === id)
+      return p ? `${p.marca} ${p.ano ?? p.modelo}`.trim() : ''
+    }
     if (producto === 'accesorio') {
       const p = accesorios.find(a => a.id === id)
       return p ? `${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
@@ -110,12 +121,15 @@ export default function Proformas() {
   const getProducto = (producto, id) => {
     if (!id) return null
     if (producto === 'moto') return motos.find(m => m.id === id) || null
+    if (producto === 'moto_e') return motosE.find(m => m.id === id) || null
     if (producto === 'accesorio') return accesorios.find(a => a.id === id) || null
     return repuestos.find(r => r.id === id) || null
   }
 
   const catalogoActual = itemForm.producto === 'moto'
     ? motos
+    : itemForm.producto === 'moto_e'
+      ? motosE
     : itemForm.producto === 'accesorio'
       ? accesorios
       : repuestos
@@ -126,7 +140,7 @@ export default function Proformas() {
     : []
 
   const formatProductoOption = (producto) => {
-    if (itemForm.producto === 'moto') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
+    if (itemForm.producto === 'moto' || itemForm.producto === 'moto_e') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
     return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
   }
 
@@ -142,6 +156,7 @@ export default function Proformas() {
       _edit: false,
     }
     if (itemForm.producto === 'moto') payload.moto_id = productoId
+    if (itemForm.producto === 'moto_e') payload.moto_e_id = productoId
     if (itemForm.producto === 'accesorio') payload.accesorio_id = productoId
     if (itemForm.producto === 'repuesto') payload.repuesto_id = productoId
 
@@ -281,6 +296,7 @@ export default function Proformas() {
                 onChange={e => setItemForm({ ...INITIAL_ITEM_FORM, producto: e.target.value })}
               >
                 <option value="moto">Moto</option>
+                <option value="moto_e">Moto-E</option>
                 <option value="accesorio">Accesorio</option>
                 <option value="repuesto">Repuesto</option>
               </select>
