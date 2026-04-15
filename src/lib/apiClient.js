@@ -285,6 +285,12 @@ export const api = {
   actualizarPuntoVenta: ({ token, id, data }) => request(`/points/${id}`, { method: 'PATCH', token, body: { data } }),
   transferirInventario: ({ token, data }) => request('/inventory/transfers', { method: 'POST', token, body: { data } }),
   crearAsignacionProductos: ({ token, data }) => request('/assignments', { method: 'POST', token, body: { data } }),
+  listarAsignacionesProductos: ({ token, limit } = {}) => {
+    const query = new URLSearchParams();
+    if (limit) query.set('limit', String(limit));
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/assignments${suffix}`, { token });
+  },
   obtenerAsignacionProductos: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}`, { token }),
   aplicarAsignacionProductos: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}/apply`, { method: 'POST', token }),
   crearRepuesto: ({ token, data }) => request('/products/repuestos', { method: 'POST', token, body: { data } }),

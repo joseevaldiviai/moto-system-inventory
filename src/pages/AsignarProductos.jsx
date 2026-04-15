@@ -17,6 +17,8 @@ export default function AsignarProductos() {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [tickets, setTickets] = useState([])
+  const [ticketsLoading, setTicketsLoading] = useState(false)
 
   const [form, setForm] = useState({
     origen_punto_venta_id: '',
@@ -60,6 +62,18 @@ export default function AsignarProductos() {
     return { scope: 'point', puntoVentaId: originPoint.id }
   }, [originPoint])
 
+  const loadTickets = async () => {
+    if (!token) return
+    setTicketsLoading(true)
+    try {
+      const res = await api.listarAsignacionesProductos({ token, limit: 80 })
+      if (!res?.ok) return
+      setTickets(res.data || [])
+    } finally {
+      setTicketsLoading(false)
+    }
+  }
+
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
     if (currentTab === 'motos_e') return api.listarMotosE({ token, ...params })
@@ -85,6 +99,25 @@ export default function AsignarProductos() {
   }
 
   useEffect(() => { load() }, [token, tab, search, inventoryScope?.scope, inventoryScope?.puntoVentaId])
+  useEffect(() => { loadTickets() }, [token])
+
+  const formatTicketDate = (value) => {
+    if (!value) return '-'
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return String(value)
+    return d.toLocaleString('es-BO')
+  }
+
+  const buildProductLabel = (product) => {
+    const parts = [
+      product?.marca,
+      product?.tipo || product?.ano,
+      product?.ano && product?.tipo ? product?.ano : null,
+      product?.color,
+      product?.cilindrada,
+    ].filter(Boolean)
+    return parts.join(' · ') || `#${product?.id}`
+  }
 
   const addItem = (product) => {
     const key = `${tab}:${product.id}`
@@ -104,7 +137,7 @@ export default function AsignarProductos() {
           key,
           kind: tab,
           product_id: product.id,
-          nombre: `${product.marca || ''} ${product.tipo || product.ano || ''} ${product.cilindrada || ''}`.trim() || `#${product.id}`,
+          nombre: buildProductLabel(product),
           disponible: Number(product.cantidad_libre || 0),
           cantidad: '1',
         },
@@ -146,6 +179,7 @@ export default function AsignarProductos() {
     setLastCode(res.data.codigo)
     toast.success(`Asignación creada: ${res.data.codigo}`)
     setForm((f) => ({ ...f, items: [] }))
+    loadTickets()
   }
 
   const originOptions = puntos.filter((p) => p.activo)
@@ -185,6 +219,84 @@ export default function AsignarProductos() {
           </div>
         </div>
       )}
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={S.card}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 2 }}>Tickets de consolidación</div>
+              <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>Listado de códigos generados (últimos {tickets?.length || 0}).</div>
+            </div>
+            <button type="button" onClick={loadTickets} style={S.btn} disabled={ticketsLoading}>
+              {ticketsLoading ? 'Actualizando...' : 'Actualizar'}
+            </button>
+          </div>
+
+          <div style={{ marginTop: 12 }} className="table-wrap list-scroll">
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                  <th style={{ padding: '6px 4px' }}>Código</th>
+                  <th style={{ padding: '6px 4px' }}>Origen</th>
+                  <th style={{ padding: '6px 4px' }}>Destino</th>
+                  <th style={{ padding: '6px 4px' }}>Items</th>
+                  <th style={{ padding: '6px 4px' }}>Estado</th>
+                  <th style={{ padding: '6px 4px' }}>Creado</th>
+                  <th style={{ padding: '6px 4px' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(tickets || []).map((t) => (
+                  <tr key={t.id} style={{ borderTop: '1px solid var(--divider)' }}>
+                    <td style={{ padding: '6px 4px', fontFamily: 'monospace', color: 'var(--text-strong)' }}>{t.codigo}</td>
+                    <td style={{ padding: '6px 4px' }}>{t.origen_nombre}</td>
+                    <td style={{ padding: '6px 4px' }}>{t.destino_nombre}</td>
+                    <td style={{ padding: '6px 4px' }}>{t.total_items ?? 0}</td>
+                    <td style={{ padding: '6px 4px' }}>{t.estado}</td>
+                    <td style={{ padding: '6px 4px', color: 'var(--text-muted)' }}>{formatTicketDate(t.creado_en)}</td>
+                    <td style={{ padding: '6px 4px', minWidth: 180 }}>
+                      <div className="button-row" style={{ gap: 6 }}>
+                        <button
+                          type="button"
+                          style={S.btn}
+                          onClick={async () => {
+                            const res = await api.obtenerAsignacionProductos({ token, codigo: t.codigo })
+                            if (!res?.ok) return toast.error(res?.error || 'No se pudo abrir el ticket')
+                            toast.success(`Ticket ${res.data.codigo} · ${res.data.estado} · Items: ${res.data.total_items}`)
+                          }}
+                        >
+                          Ver
+                        </button>
+                        <button
+                          type="button"
+                          style={S.btn}
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(t.codigo)
+                              toast.success('Copiado')
+                            } catch {
+                              toast.error('No se pudo copiar')
+                            }
+                          }}
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {(tickets || []).length === 0 && !ticketsLoading && (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '10px 4px', color: 'var(--text-muted)' }}>
+                      Sin tickets aún.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
       <div className="grid-main-two">
         <div className="stack-md">
@@ -306,9 +418,13 @@ export default function AsignarProductos() {
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ minWidth: 220 }}>
                       <div style={{ color: 'var(--text-strong)' }}>
-                        {`${p.marca || '-'} · ${p.tipo || p.ano || '-'}${p.cilindrada ? ` · ${p.cilindrada}` : ''}`}
+                        {buildProductLabel(p)}
                       </div>
-                      <div style={{ color: 'var(--text-soft)' }}>Stock: {Number(p.cantidad_libre || 0)}</div>
+                      <div style={{ color: 'var(--text-soft)' }}>
+                        Stock: {Number(p.cantidad_libre || 0)}
+                        {p.ano ? ` · Año: ${p.ano}` : ''}
+                        {p.color ? ` · Color: ${p.color}` : ''}
+                      </div>
                     </div>
                     <button type="button" onClick={() => addItem(p)} style={S.btn} disabled={Number(p.cantidad_libre || 0) <= 0}>
                       Agregar

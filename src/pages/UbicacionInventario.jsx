@@ -15,7 +15,6 @@ export default function UbicacionInventario() {
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState('name')
   const [sortDirection, setSortDirection] = useState('asc')
-  const [transferForm, setTransferForm] = useState({})
 
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
@@ -114,44 +113,6 @@ export default function UbicacionInventario() {
       .finally(() => setLoading(false))
   }, [token, pointId, point, tab, search])
 
-  const handleTransfer = async (item) => {
-    const transferKey = item.groupKey || String(item.id)
-    if ((item.sourceIds?.length || 1) > 1) {
-      return toast.error('Este grupo contiene varios registros. Mueve el stock desde un detalle mas especifico.')
-    }
-    const current = transferForm[transferKey] || { cantidad: '1' }
-    if (!current.destination_point_id) return toast.error('Selecciona el destino')
-    if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
-
-    const res = await api.transferirInventario({
-      token,
-      data: {
-        kind: tab,
-        product_id: item.id,
-        source_point_id: Number(pointId),
-        destination_point_id: Number(current.destination_point_id),
-        cantidad: Number(current.cantidad),
-      },
-    })
-    if (!res.ok) return toast.error(res.error || 'Error al mover stock')
-
-    toast.success('Producto movido')
-    setTransferForm((state) => ({
-      ...state,
-      [transferKey]: { destination_point_id: state[transferKey]?.destination_point_id || '', cantidad: '1' },
-    }))
-
-    const params = {
-      ...(search.trim() ? { buscar: search.trim() } : {}),
-      scope: point.tipo === 'CENTRAL' ? 'central' : 'point',
-      puntoVentaId: point.tipo === 'CENTRAL' ? undefined : pointId,
-    }
-    const reload = await fetchByTab(tab, params)
-    if (reload.ok) setItems(reload.data)
-  }
-
-  const destinationOptions = puntos.filter((item) => item.activo && String(item.id) !== String(pointId))
-
   return (
     <div className="page-shell" style={S.page}>
       <div className="page-header">
@@ -219,7 +180,6 @@ export default function UbicacionInventario() {
                   <th style={{ padding: '6px 4px' }}>Cilindrada</th>
                   <th style={{ padding: '6px 4px' }}>Stock</th>
                   <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
-                  <th style={{ padding: '6px 4px' }}>Mover a</th>
                 </tr>
               </thead>
               <tbody>
@@ -230,40 +190,6 @@ export default function UbicacionInventario() {
                     <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
                     <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                     <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
-                    <td style={{ padding: '6px 4px', minWidth: 260 }}>
-                      <div style={{ display: 'grid', gap: 6 }}>
-                        <select
-                          style={S.input}
-                          value={transferForm[it.groupKey || it.id]?.destination_point_id ?? ''}
-                          onChange={(e) => setTransferForm((state) => ({
-                            ...state,
-                            [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), destination_point_id: e.target.value },
-                          }))}
-                        >
-                          <option value="">Selecciona destino</option>
-                          {destinationOptions.map((destination) => (
-                            <option key={destination.id} value={destination.id}>
-                              {destination.tipo === 'CENTRAL' ? 'Almacen principal' : destination.nombre}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="button-row" style={{ gap: 6 }}>
-                          <input
-                            style={S.input}
-                            type="number"
-                            min="1"
-                            max={it.cantidad_libre}
-                            placeholder="Cantidad"
-                            value={transferForm[it.groupKey || it.id]?.cantidad ?? '1'}
-                            onChange={(e) => setTransferForm((state) => ({
-                              ...state,
-                              [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), cantidad: e.target.value },
-                            }))}
-                          />
-                          <button onClick={() => handleTransfer(it)} style={S.btn}>Mover</button>
-                        </div>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>

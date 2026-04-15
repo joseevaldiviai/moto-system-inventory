@@ -946,14 +946,55 @@ async function handleAssignmentsCreate(request, env) {
   if (payloadItems.some((it) => !Number.isFinite(it.product_id) || it.product_id <= 0)) return fail('Producto invalido');
   if (payloadItems.some((it) => !Number.isFinite(it.cantidad) || it.cantidad <= 0)) return fail('Cantidad invalida');
 
-  const { data: code, error } = await admin.rpc('create_inventory_assignment', {
-    p_creado_por: profile.id,
-    p_origen_punto_venta_id: originId,
-    p_destino_punto_venta_id: destinationId,
-    p_items: payloadItems,
-  });
-  if (error) return fail(error.message);
-  return json({ ok: true, data: { codigo: code } });
+  try {
+    const originPoint = await getPointById(admin, originId);
+    const destinationPoint = await getPointById(admin, destinationId);
+    if (!originPoint.activo) return fail('Ubicacion origen inactiva');
+    if (!destinationPoint.activo) return fail('Ubicacion destino inactiva');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(message, message.includes('no encontrado') ? 404 : 400);
+  }
+
+  // Genera codigo sin depender del schema cache (RPC).
+  const year = new Date().getFullYear();
+  const prefix = `CON-${year}-`;
+  const { count, error: countError } = await admin
+    .from('asignaciones_inventario')
+    .select('id', { count: 'exact', head: true })
+    .like('codigo', `${prefix}%`);
+  if (countError) return fail(countError.message, 500);
+  const seq = String((count ?? 0) + 1).padStart(4, '0');
+  const codigo = `${prefix}${seq}`;
+
+  const { data: created, error: insertError } = await admin
+    .from('asignaciones_inventario')
+    .insert({
+      codigo,
+      origen_punto_venta_id: originId,
+      destino_punto_venta_id: destinationId,
+      creado_por: profile.id,
+      estado: 'PENDIENTE',
+    })
+    .select('id')
+    .single();
+  if (insertError) return fail(insertError.message);
+
+  const rows = payloadItems.map((it) => ({
+    asignacion_id: created.id,
+    producto_tipo: it.kind,
+    producto_id: it.product_id,
+    cantidad: it.cantidad,
+  }));
+  const { error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .insert(rows);
+  if (itemsError) {
+    await admin.from('asignaciones_inventario').delete().eq('id', created.id);
+    return fail(itemsError.message);
+  }
+
+  return json({ ok: true, data: { codigo } });
 }
 
 async function handleAssignmentsGet(request, env, code) {
@@ -998,6 +1039,55 @@ async function handleAssignmentsGet(request, env, code) {
       total_items: (items || []).length,
       items: items || [],
     },
+  });
+}
+
+async function handleAssignmentsList(request, env) {
+  const { admin } = await requireSupervisor(request, env);
+  const url = new URL(request.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 200);
+
+  const { data: rows, error } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_en, aplicado_en')
+    .order('creado_en', { ascending: false })
+    .limit(limit);
+  if (error) return fail(error.message, 500);
+  if (!rows?.length) return json({ ok: true, data: [] });
+
+  const ids = rows.map((r) => r.id);
+  const pointIds = [...new Set(rows.flatMap((r) => [r.origen_punto_venta_id, r.destino_punto_venta_id]).filter(Boolean))];
+
+  const { data: points, error: pointsError } = await admin
+    .from('puntos_venta')
+    .select('id, nombre, tipo')
+    .in('id', pointIds);
+  if (pointsError) return fail(pointsError.message, 500);
+  const pointsMap = new Map((points || []).map((p) => [Number(p.id), p]));
+
+  const { data: items, error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .select('asignacion_id')
+    .in('asignacion_id', ids);
+  if (itemsError) return fail(itemsError.message, 500);
+  const counts = new Map();
+  for (const it of items || []) {
+    const key = Number(it.asignacion_id);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+
+  return json({
+    ok: true,
+    data: rows.map((r) => {
+      const origin = pointsMap.get(Number(r.origen_punto_venta_id));
+      const dest = pointsMap.get(Number(r.destino_punto_venta_id));
+      return {
+        ...r,
+        total_items: counts.get(Number(r.id)) || 0,
+        origen_nombre: origin?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (origin?.nombre || 'Origen'),
+        destino_nombre: dest?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (dest?.nombre || 'Destino'),
+      };
+    }),
   });
 }
 
@@ -2057,6 +2147,7 @@ export default {
 
       if (path === '/inventory/transfers' && request.method === 'POST') return withCors(await handleInventoryTransfer(request, env));
 
+      if (path === '/assignments' && request.method === 'GET') return withCors(await handleAssignmentsList(request, env));
       if (path === '/assignments' && request.method === 'POST') return withCors(await handleAssignmentsCreate(request, env));
       if (path.startsWith('/assignments/') && request.method === 'GET' && !path.endsWith('/apply')) return withCors(await handleAssignmentsGet(request, env, path.split('/')[2]));
       if (path.startsWith('/assignments/') && request.method === 'POST' && path.endsWith('/apply')) return withCors(await handleAssignmentsApply(request, env, path.split('/')[2]));
