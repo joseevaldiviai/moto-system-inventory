@@ -13,6 +13,7 @@ import Usuarios from './pages/Usuarios'
 import Perfil from './pages/Perfil'
 import Manual from './pages/Manual'
 import UbicacionInventario from './pages/UbicacionInventario'
+import AsignarProductos from './pages/AsignarProductos'
 
 function PrivateRoute({ children }) {
   const { token, authReady } = useAuthStore()
@@ -86,6 +87,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index             element={<Dashboard />} />
           <Route path="inventario" element={<Inventario />} />
+          <Route path="asignar-productos" element={<SupervisorRoute><AsignarProductos /></SupervisorRoute>} />
           <Route path="proformas"  element={<Proformas />} />
           <Route path="ventas"     element={<Ventas />} />
           <Route path="reportes"   element={<Reportes />} />

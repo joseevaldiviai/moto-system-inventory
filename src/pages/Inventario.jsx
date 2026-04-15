@@ -23,6 +23,9 @@ export default function Inventario() {
   const [form, setForm] = useState({})
   const [marcaForm, setMarcaForm] = useState({ nombre: '' })
   const [config, setConfig] = useState({ bsisa: '', placa: '' })
+  const [assignmentCode, setAssignmentCode] = useState('')
+  const [assignmentInfo, setAssignmentInfo] = useState(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
 
   const isSup = esSupervisor()
   const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
@@ -236,30 +239,42 @@ export default function Inventario() {
     toast.success('Costos actualizados')
   }
 
-  const handleTransfer = async (item) => {
-    const transferKey = item.groupKey || String(item.id)
-    if ((item.sourceIds?.length || 1) > 1) {
-      return toast.error('Este grupo contiene varios registros. Mueve el stock desde un detalle mas especifico.')
+  const fetchAssignment = async () => {
+    const code = assignmentCode.trim()
+    if (!code) return toast.error('Ingresa un código')
+    setAssignmentLoading(true)
+    try {
+      const res = await api.obtenerAsignacionProductos({ token, codigo: code })
+      if (!res?.ok) {
+        setAssignmentInfo(null)
+        return toast.error(res?.error || 'Código inválido')
+      }
+      setAssignmentInfo(res.data)
+      toast.success('Código válido')
+    } catch (e) {
+      setAssignmentInfo(null)
+      toast.error(e.message)
+    } finally {
+      setAssignmentLoading(false)
     }
-    const current = transferForm[transferKey] || { punto_venta_id: defaultTransferPointId, cantidad: '1' }
-    if (!current.punto_venta_id) return toast.error('Selecciona un punto de venta')
-    if (!activeDestinationPoints.some((point) => String(point.id) === String(current.punto_venta_id))) {
-      return toast.error('Selecciona un punto de venta activo')
+  }
+
+  const applyAssignment = async () => {
+    const code = assignmentCode.trim()
+    if (!code) return toast.error('Ingresa un código')
+    setAssignmentLoading(true)
+    try {
+      const res = await api.aplicarAsignacionProductos({ token, codigo: code })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo aplicar')
+      toast.success('Asignación aplicada')
+      setAssignmentInfo(null)
+      setAssignmentCode('')
+      load()
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setAssignmentLoading(false)
     }
-    if (!current.cantidad || Number(current.cantidad) <= 0) return toast.error('Ingresa una cantidad valida')
-    const res = await api.transferirInventario({
-      token,
-      data: {
-        kind: tab,
-        product_id: item.id,
-        punto_venta_id: Number(current.punto_venta_id),
-        cantidad: Number(current.cantidad),
-      },
-    })
-    if (!res.ok) return toast.error(res.error || 'Error')
-    toast.success('Stock transferido al punto de venta')
-    setTransferForm((state) => ({ ...state, [transferKey]: { ...state[transferKey], cantidad: '1' } }))
-    load()
   }
 
   const S = {
@@ -366,6 +381,48 @@ export default function Inventario() {
       <div className="grid-main-two">
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Listado</div>
+
+          {isSup && (
+            <div style={{ marginBottom: 12, padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-2)' }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
+                Código de asignación de productos
+              </div>
+              <div className="button-row" style={{ gap: 8, alignItems: 'end' }}>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <input
+                    style={S.input}
+                    placeholder="Ej: CON-2026-0001"
+                    value={assignmentCode}
+                    onChange={(e) => setAssignmentCode(e.target.value)}
+                    disabled={assignmentLoading}
+                  />
+                </div>
+                <button type="button" onClick={fetchAssignment} style={S.btn} disabled={assignmentLoading}>
+                  Validar
+                </button>
+                <button
+                  type="button"
+                  onClick={applyAssignment}
+                  style={{ ...S.btn, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                  disabled={assignmentLoading || !assignmentInfo || assignmentInfo?.estado !== 'PENDIENTE'}
+                  title={!assignmentInfo ? 'Valida el código primero' : assignmentInfo?.estado !== 'PENDIENTE' ? 'Esta asignación ya fue aplicada o anulada' : 'Aplicar asignación'}
+                >
+                  Aplicar
+                </button>
+              </div>
+              {assignmentInfo && (
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-soft)' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Origen:</span> {assignmentInfo.origen_nombre} ·{' '}
+                    <span style={{ color: 'var(--text-muted)' }}>Destino:</span> {assignmentInfo.destino_nombre} ·{' '}
+                    <span style={{ color: 'var(--text-muted)' }}>Items:</span> {assignmentInfo.total_items} ·{' '}
+                    <span style={{ color: 'var(--text-muted)' }}>Estado:</span> {assignmentInfo.estado}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ marginBottom: 12 }}>
             <input
               style={S.input}
@@ -425,7 +482,6 @@ export default function Inventario() {
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
-                      {isSup && <th style={{ padding: '6px 4px' }}>Asignar a punto</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -437,40 +493,6 @@ export default function Inventario() {
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
-                        {isSup && (
-                          <td style={{ padding: '6px 4px', minWidth: 230 }}>
-                            <div style={{ display: 'grid', gap: 6 }}>
-                              <select
-                                style={S.input}
-                                value={transferForm[it.groupKey || it.id]?.punto_venta_id ?? defaultTransferPointId}
-                                onChange={e => setTransferForm(state => ({
-                                  ...state,
-                                  [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), punto_venta_id: e.target.value },
-                                }))}
-                              >
-                                <option value="">Selecciona punto</option>
-                                {activeDestinationPoints.map(point => (
-                                  <option key={point.id} value={point.id}>{point.nombre}</option>
-                                ))}
-                              </select>
-                              <div className="button-row" style={{ gap: 6 }}>
-                                <input
-                                  style={S.input}
-                                  type="number"
-                                  min="1"
-                                  max={it.cantidad_libre}
-                                  placeholder="Cantidad"
-                                  value={transferForm[it.groupKey || it.id]?.cantidad ?? '1'}
-                                  onChange={e => setTransferForm(state => ({
-                                    ...state,
-                                    [it.groupKey || it.id]: { ...(state[it.groupKey || it.id] || {}), cantidad: e.target.value },
-                                  }))}
-                                />
-                                <button onClick={() => handleTransfer(it)} style={S.btn}>Asignar</button>
-                              </div>
-                            </div>
-                          </td>
-                        )}
                       </tr>
                     ))}
                   </tbody>

@@ -8,6 +8,7 @@ import { api } from '../../lib/apiClient'
 const NAV = [
   { to:'/',          label:'Dashboard',  icon:'▦',  roles:['SUPERVISOR','CAJERO'] },
   { to:'/inventario',label:'Inventario', icon:'📦', roles:['SUPERVISOR','CAJERO'] },
+  { to:'/asignar-productos', label:'Asignar productos', icon:'🧾', roles:['SUPERVISOR'] },
   { to:'/proformas', label:'Proformas',  icon:'📋', roles:['SUPERVISOR','CAJERO'] },
   { to:'/ventas',    label:'Ventas',     icon:'💰', roles:['SUPERVISOR','CAJERO'] },
   { to:'/reportes',  label:'Reportes',   icon:'📊', roles:['SUPERVISOR','CAJERO'] },

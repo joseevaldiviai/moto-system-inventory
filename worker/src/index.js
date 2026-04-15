@@ -10,6 +10,110 @@ const POINT_TYPES = {
 
 const PRODUCT_TABLES = ['motos', 'motos_e', 'accesorios', 'repuestos'];
 
+async function transferInventoryStock({ admin, kind, productId, sourcePointId, destinationPointId, quantity }) {
+  const centralPoint = await getCentralPoint(admin);
+  const resolvedSourcePointId = Number(sourcePointId ?? centralPoint.id);
+  const resolvedDestinationPointId = Number(destinationPointId);
+  const resolvedProductId = Number(productId);
+  const resolvedQuantity = Number(quantity);
+
+  if (!PRODUCT_TABLES.includes(kind)) throw new Error('Tipo de inventario no soportado');
+  if (!Number.isFinite(resolvedProductId) || resolvedProductId <= 0) throw new Error('Producto invalido');
+  if (!Number.isFinite(resolvedSourcePointId) || resolvedSourcePointId <= 0) throw new Error('Origen invalido');
+  if (!Number.isFinite(resolvedDestinationPointId) || resolvedDestinationPointId <= 0) throw new Error('Destino invalido');
+  if (!Number.isFinite(resolvedQuantity) || resolvedQuantity <= 0) throw new Error('Cantidad invalida');
+  if (resolvedSourcePointId === resolvedDestinationPointId) throw new Error('El origen y el destino no pueden ser iguales');
+
+  const sourcePoint = await getPointById(admin, resolvedSourcePointId);
+  const destinationPoint = await getPointById(admin, resolvedDestinationPointId);
+  if (!sourcePoint.activo) throw new Error('Ubicacion origen inactiva');
+  if (!destinationPoint.activo) throw new Error('Ubicacion destino inactiva');
+
+  const { data: product, error: productError } = await admin
+    .from(kind)
+    .select('id, activo, cantidad_libre')
+    .eq('id', resolvedProductId)
+    .single();
+  if (productError || !product || !product.activo) throw new Error('Producto no encontrado');
+
+  if (sourcePoint.tipo === POINT_TYPES.CENTRAL) {
+    if (Number(product.cantidad_libre || 0) < resolvedQuantity) throw new Error('Stock insuficiente en almacen central');
+    const { error } = await admin
+      .from(kind)
+      .update({
+        cantidad_libre: Number(product.cantidad_libre || 0) - resolvedQuantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', resolvedProductId)
+      .gte('cantidad_libre', resolvedQuantity);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data: sourceStock, error: sourceStockError } = await admin
+      .from('inventario_puntos_venta')
+      .select('id, cantidad_libre')
+      .eq('punto_venta_id', resolvedSourcePointId)
+      .eq('producto_tipo', kind)
+      .eq('producto_id', resolvedProductId)
+      .maybeSingle();
+    if (sourceStockError) throw new Error(sourceStockError.message);
+    if (!sourceStock || Number(sourceStock.cantidad_libre || 0) < resolvedQuantity) {
+      throw new Error('Stock insuficiente en la ubicacion origen');
+    }
+
+    const { error } = await admin
+      .from('inventario_puntos_venta')
+      .update({
+        cantidad_libre: Number(sourceStock.cantidad_libre || 0) - resolvedQuantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', sourceStock.id);
+    if (error) throw new Error(error.message);
+  }
+
+  if (destinationPoint.tipo === POINT_TYPES.CENTRAL) {
+    const { error } = await admin
+      .from(kind)
+      .update({
+        cantidad_libre: Number(product.cantidad_libre || 0) + resolvedQuantity,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', resolvedProductId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data: destinationStock, error: destinationStockError } = await admin
+      .from('inventario_puntos_venta')
+      .select('id, cantidad_libre')
+      .eq('punto_venta_id', resolvedDestinationPointId)
+      .eq('producto_tipo', kind)
+      .eq('producto_id', resolvedProductId)
+      .maybeSingle();
+    if (destinationStockError) throw new Error(destinationStockError.message);
+
+    if (destinationStock?.id) {
+      const { error } = await admin
+        .from('inventario_puntos_venta')
+        .update({
+          cantidad_libre: Number(destinationStock.cantidad_libre || 0) + resolvedQuantity,
+          actualizado_en: new Date().toISOString(),
+        })
+        .eq('id', destinationStock.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await admin
+        .from('inventario_puntos_venta')
+        .insert({
+          punto_venta_id: resolvedDestinationPointId,
+          producto_tipo: kind,
+          producto_id: resolvedProductId,
+          cantidad_libre: resolvedQuantity,
+          cantidad_reservada: 0,
+          cantidad_vendida: 0,
+        });
+      if (error) throw new Error(error.message);
+    }
+  }
+}
+
 async function setActiveSession(admin, userId, sessionId) {
   const patch = {
     sesion_activa_id: sessionId,
@@ -803,101 +907,139 @@ async function handleInventoryTransfer(request, env) {
   const destinationPointId = Number(data?.destination_point_id ?? data?.destino_punto_venta_id ?? data?.destinationPointId ?? data?.punto_venta_id);
   const quantity = Number(data?.cantidad);
 
-  if (!PRODUCT_TABLES.includes(kind)) return fail('Tipo de inventario no soportado');
-  if (!Number.isFinite(productId) || productId <= 0) return fail('Producto invalido');
-  if (!Number.isFinite(sourcePointId) || sourcePointId <= 0) return fail('Origen invalido');
-  if (!Number.isFinite(destinationPointId) || destinationPointId <= 0) return fail('Destino invalido');
-  if (!Number.isFinite(quantity) || quantity <= 0) return fail('Cantidad invalida');
-  if (sourcePointId === destinationPointId) return fail('El origen y el destino no pueden ser iguales');
+  try {
+    await transferInventoryStock({
+      admin,
+      kind,
+      productId,
+      sourcePointId,
+      destinationPointId,
+      quantity,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes('no encontrado') ? 404 : 400;
+    return fail(message, status);
+  }
 
-  const sourcePoint = await getPointById(admin, sourcePointId);
-  const destinationPoint = await getPointById(admin, destinationPointId);
-  if (!sourcePoint.activo) return fail('Ubicacion origen inactiva');
-  if (!destinationPoint.activo) return fail('Ubicacion destino inactiva');
+  return json({ ok: true });
+}
 
-  const { data: product, error: productError } = await admin
-    .from(kind)
-    .select('id, activo, cantidad_libre')
-    .eq('id', productId)
+async function handleAssignmentsCreate(request, env) {
+  const { admin, profile } = await requireSupervisor(request, env);
+  const { data } = await readJson(request);
+  const originId = Number(data?.origen_punto_venta_id);
+  const destinationId = Number(data?.destino_punto_venta_id);
+  const items = data?.items;
+
+  if (!Number.isFinite(originId) || originId <= 0) return fail('Origen invalido');
+  if (!Number.isFinite(destinationId) || destinationId <= 0) return fail('Destino invalido');
+  if (originId === destinationId) return fail('Origen y destino no pueden ser iguales');
+  if (!Array.isArray(items) || items.length === 0) return fail('Debe incluir al menos un item');
+
+  const payloadItems = items.map((it) => ({
+    kind: it.kind,
+    product_id: Number(it.product_id),
+    cantidad: Number(it.cantidad),
+  }));
+  if (payloadItems.some((it) => !PRODUCT_TABLES.includes(it.kind))) return fail('Tipo de inventario no soportado');
+  if (payloadItems.some((it) => !Number.isFinite(it.product_id) || it.product_id <= 0)) return fail('Producto invalido');
+  if (payloadItems.some((it) => !Number.isFinite(it.cantidad) || it.cantidad <= 0)) return fail('Cantidad invalida');
+
+  const { data: code, error } = await admin.rpc('create_inventory_assignment', {
+    p_creado_por: profile.id,
+    p_origen_punto_venta_id: originId,
+    p_destino_punto_venta_id: destinationId,
+    p_items: payloadItems,
+  });
+  if (error) return fail(error.message);
+  return json({ ok: true, data: { codigo: code } });
+}
+
+async function handleAssignmentsGet(request, env, code) {
+  const { admin } = await requireSupervisor(request, env);
+  const codigo = decodeURIComponent(code || '').trim();
+  if (!codigo) return fail('Codigo requerido');
+
+  const { data: asignacion, error: asignacionError } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_en, aplicado_en')
+    .eq('codigo', codigo)
     .single();
-  if (productError || !product || !product.activo) return fail('Producto no encontrado', 404);
+  if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
 
-  if (sourcePoint.tipo === POINT_TYPES.CENTRAL) {
-    if (Number(product.cantidad_libre || 0) < quantity) return fail('Stock insuficiente en almacen central');
-    const { error } = await admin
-      .from(kind)
-      .update({
-        cantidad_libre: Number(product.cantidad_libre || 0) - quantity,
-        actualizado_en: new Date().toISOString(),
-      })
-      .eq('id', productId)
-      .gte('cantidad_libre', quantity);
-    if (error) return fail(error.message);
-  } else {
-    const { data: sourceStock, error: sourceStockError } = await admin
-      .from('inventario_puntos_venta')
-      .select('id, cantidad_libre')
-      .eq('punto_venta_id', sourcePointId)
-      .eq('producto_tipo', kind)
-      .eq('producto_id', productId)
-      .maybeSingle();
-    if (sourceStockError) return fail(sourceStockError.message);
-    if (!sourceStock || Number(sourceStock.cantidad_libre || 0) < quantity) {
-      return fail('Stock insuficiente en la ubicacion origen');
-    }
+  const { data: points, error: pointsError } = await admin
+    .from('puntos_venta')
+    .select('id, nombre, tipo')
+    .in('id', [asignacion.origen_punto_venta_id, asignacion.destino_punto_venta_id]);
+  if (pointsError) return fail(pointsError.message, 500);
+  const pointsMap = new Map((points || []).map((p) => [Number(p.id), p]));
+  const origin = pointsMap.get(Number(asignacion.origen_punto_venta_id));
+  const dest = pointsMap.get(Number(asignacion.destino_punto_venta_id));
 
-    const { error } = await admin
-      .from('inventario_puntos_venta')
-      .update({
-        cantidad_libre: Number(sourceStock.cantidad_libre || 0) - quantity,
-        actualizado_en: new Date().toISOString(),
-      })
-      .eq('id', sourceStock.id);
-    if (error) return fail(error.message);
+  const { data: items, error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .select('id, producto_tipo, producto_id, cantidad')
+    .eq('asignacion_id', asignacion.id)
+    .order('id');
+  if (itemsError) return fail(itemsError.message, 500);
+
+  return json({
+    ok: true,
+    data: {
+      codigo: asignacion.codigo,
+      estado: asignacion.estado,
+      creado_en: asignacion.creado_en,
+      aplicado_en: asignacion.aplicado_en,
+      origen_punto_venta_id: asignacion.origen_punto_venta_id,
+      destino_punto_venta_id: asignacion.destino_punto_venta_id,
+      origen_nombre: origin?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (origin?.nombre || 'Origen'),
+      destino_nombre: dest?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (dest?.nombre || 'Destino'),
+      total_items: (items || []).length,
+      items: items || [],
+    },
+  });
+}
+
+async function handleAssignmentsApply(request, env, code) {
+  const { admin } = await requireSupervisor(request, env);
+  const codigo = decodeURIComponent(code || '').trim();
+  if (!codigo) return fail('Codigo requerido');
+
+  const { data: asignacion, error: asignacionError } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado')
+    .eq('codigo', codigo)
+    .single();
+  if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
+  if (asignacion.estado !== 'PENDIENTE') return fail('La asignacion ya fue aplicada o anulada');
+
+  const { data: items, error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .select('id, producto_tipo, producto_id, cantidad')
+    .eq('asignacion_id', asignacion.id)
+    .order('id');
+  if (itemsError) return fail(itemsError.message, 500);
+  if (!items?.length) return fail('Asignacion sin items', 400);
+
+  // Aplicacion secuencial; si hay error se detiene y no se marca como aplicada.
+  for (const item of items) {
+    await transferInventoryStock({
+      admin,
+      kind: item.producto_tipo,
+      productId: item.producto_id,
+      sourcePointId: asignacion.origen_punto_venta_id,
+      destinationPointId: asignacion.destino_punto_venta_id,
+      quantity: item.cantidad,
+    });
   }
 
-  if (destinationPoint.tipo === POINT_TYPES.CENTRAL) {
-    const { error } = await admin
-      .from(kind)
-      .update({
-        cantidad_libre: Number(product.cantidad_libre || 0) + quantity,
-        actualizado_en: new Date().toISOString(),
-      })
-      .eq('id', productId);
-    if (error) return fail(error.message);
-  } else {
-    const { data: destinationStock, error: destinationStockError } = await admin
-      .from('inventario_puntos_venta')
-      .select('id, cantidad_libre')
-      .eq('punto_venta_id', destinationPointId)
-      .eq('producto_tipo', kind)
-      .eq('producto_id', productId)
-      .maybeSingle();
-    if (destinationStockError) return fail(destinationStockError.message);
-
-    if (destinationStock?.id) {
-      const { error } = await admin
-        .from('inventario_puntos_venta')
-        .update({
-          cantidad_libre: Number(destinationStock.cantidad_libre || 0) + quantity,
-          actualizado_en: new Date().toISOString(),
-        })
-        .eq('id', destinationStock.id);
-      if (error) return fail(error.message);
-    } else {
-      const { error } = await admin
-        .from('inventario_puntos_venta')
-        .insert({
-          punto_venta_id: destinationPointId,
-          producto_tipo: kind,
-          producto_id: productId,
-          cantidad_libre: quantity,
-          cantidad_reservada: 0,
-          cantidad_vendida: 0,
-        });
-      if (error) return fail(error.message);
-    }
-  }
+  const { error: updateError } = await admin
+    .from('asignaciones_inventario')
+    .update({ estado: 'APLICADA', aplicado_en: new Date().toISOString() })
+    .eq('id', asignacion.id)
+    .eq('estado', 'PENDIENTE');
+  if (updateError) return fail(updateError.message, 500);
 
   return json({ ok: true });
 }
@@ -1914,6 +2056,10 @@ export default {
       if (path.startsWith('/products/repuestos/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'repuestos', path.split('/')[3]));
 
       if (path === '/inventory/transfers' && request.method === 'POST') return withCors(await handleInventoryTransfer(request, env));
+
+      if (path === '/assignments' && request.method === 'POST') return withCors(await handleAssignmentsCreate(request, env));
+      if (path.startsWith('/assignments/') && request.method === 'GET' && !path.endsWith('/apply')) return withCors(await handleAssignmentsGet(request, env, path.split('/')[2]));
+      if (path.startsWith('/assignments/') && request.method === 'POST' && path.endsWith('/apply')) return withCors(await handleAssignmentsApply(request, env, path.split('/')[2]));
 
       if (path === '/quotes' && request.method === 'GET') return withCors(await handleQuotesList(request, env));
       if (path === '/quotes' && request.method === 'POST') return withCors(await handleQuotesCreate(request, env));
