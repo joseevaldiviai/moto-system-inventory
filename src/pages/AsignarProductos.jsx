@@ -262,7 +262,7 @@ export default function AsignarProductos() {
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>ASIGNAR PRODUCTOS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Consolidación</h1>
         <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
-          Genera un código de asignación para mover inventario entre almacén y punto de venta (o viceversa).
+          Genera un código de asignación para mover inventario entre almacén y punto de venta.
         </div>
       </div>
 
