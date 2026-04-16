@@ -108,6 +108,8 @@ export default function AsignarProductos() {
     return d.toLocaleString('es-BO')
   }
 
+  const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+
   const buildProductLabel = (product) => {
     const parts = [
       product?.marca,
@@ -117,6 +119,75 @@ export default function AsignarProductos() {
       product?.cilindrada,
     ].filter(Boolean)
     return parts.join(' · ') || `#${product?.id}`
+  }
+
+  const openPrint = (assignment) => {
+    const items = assignment?.items || []
+    const rowsHtml = items.map((it) => `
+      <tr>
+        <td>${it.producto_tipo ?? ''}</td>
+        <td>${it.marca ?? ''}</td>
+        <td>${it.tipo ?? ''}</td>
+        <td>${it.ano ?? ''}</td>
+        <td>${it.color ?? ''}</td>
+        <td>${it.cilindrada ?? ''}</td>
+        <td style="text-align:right">${Number(it.cantidad ?? 0)}</td>
+        <td style="text-align:right">${Number(it.precio_venta ?? 0).toFixed(2)}</td>
+        <td style="text-align:right">${Number(it.subtotal ?? 0).toFixed(2)}</td>
+      </tr>
+    `).join('')
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>${assignment.codigo}</title>
+  <style>
+    body { font-family: Georgia, serif; margin: 28px; color: #0f172a; }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    .meta { color: #475569; font-size: 12px; margin: 2px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 12px; text-align: left; }
+    th { background: #f8fafc; }
+    .totals { margin-top: 12px; font-size: 12px; color: #334155; }
+    @media print { button { display: none; } body { margin: 0.8cm; } }
+  </style>
+</head>
+<body>
+  <button onclick="window.print()" style="margin-bottom:12px">Imprimir / Guardar como PDF</button>
+  <h1>Ticket de consolidación</h1>
+  <div class="meta"><b>Código:</b> ${assignment.codigo}</div>
+  <div class="meta"><b>Estado:</b> ${assignment.estado}</div>
+  <div class="meta"><b>Origen:</b> ${assignment.origen_nombre}</div>
+  <div class="meta"><b>Destino:</b> ${assignment.destino_nombre}</div>
+  <div class="meta"><b>Creado:</b> ${assignment.creado_en ? new Date(assignment.creado_en).toLocaleString('es-BO') : '-'}</div>
+  <div class="meta"><b>Aplicado:</b> ${assignment.aplicado_en ? new Date(assignment.aplicado_en).toLocaleString('es-BO') : '-'}</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Tipo</th><th>Marca</th><th>Modelo/Tipo</th><th>Año</th><th>Color</th><th>Cilindrada</th>
+        <th style="text-align:right">Cantidad</th>
+        <th style="text-align:right">Precio venta</th>
+        <th style="text-align:right">Subtotal</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  <div class="totals">
+    <div><b>Total unidades:</b> ${Number(assignment.total_unidades ?? 0)}</div>
+    <div><b>Total (precio venta):</b> ${Number(assignment.total_venta ?? 0).toFixed(2)}</div>
+  </div>
+</body>
+</html>`
+
+    const w = window.open('', '_blank')
+    if (!w) return toast.error('Permite ventanas emergentes para imprimir')
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+    setTimeout(() => w.focus(), 50)
   }
 
   const addItem = (product) => {
@@ -261,11 +332,11 @@ export default function AsignarProductos() {
                           style={S.btn}
                           onClick={async () => {
                             const res = await api.obtenerAsignacionProductos({ token, codigo: t.codigo })
-                            if (!res?.ok) return toast.error(res?.error || 'No se pudo abrir el ticket')
-                            toast.success(`Ticket ${res.data.codigo} · ${res.data.estado} · Items: ${res.data.total_items}`)
+                            if (!res?.ok) return toast.error(res?.error || 'No se pudo imprimir el ticket')
+                            openPrint(res.data)
                           }}
                         >
-                          Ver
+                          Imprimir
                         </button>
                         <button
                           type="button"

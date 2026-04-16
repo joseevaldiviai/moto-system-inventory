@@ -346,6 +346,15 @@ export default function Inventario() {
   const groupedPointItems = groupInventoryRows(pointItems, false)
   const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedDisplayedItems, sortField, sortDirection)
   const sortedPointItems = sortInventoryRows(groupedPointItems, pointSortField, pointSortDirection)
+  const listTotals = tab === 'marcas'
+    ? { unidades: 0, dinero: 0 }
+    : sortedDisplayedItems.reduce((acc, row) => {
+        const qty = Number(row?.cantidad_libre || 0)
+        const price = Number(row?.precio_venta ?? row?.precio_final ?? 0)
+        acc.unidades += qty
+        acc.dinero += qty * price
+        return acc
+      }, { unidades: 0, dinero: 0 })
 
   return (
     <div className="page-shell" style={S.page}>
@@ -382,7 +391,7 @@ export default function Inventario() {
         <div style={S.card}>
           <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 10 }}>Listado</div>
 
-          {isSup && (
+          {token && (
             <div style={{ marginBottom: 12, padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-2)' }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
                 Código de asignación de productos
@@ -400,24 +409,56 @@ export default function Inventario() {
                 <button type="button" onClick={fetchAssignment} style={S.btn} disabled={assignmentLoading}>
                   Validar
                 </button>
-                <button
-                  type="button"
-                  onClick={applyAssignment}
-                  style={{ ...S.btn, borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                  disabled={assignmentLoading || !assignmentInfo || assignmentInfo?.estado !== 'PENDIENTE'}
-                  title={!assignmentInfo ? 'Valida el código primero' : assignmentInfo?.estado !== 'PENDIENTE' ? 'Esta asignación ya fue aplicada o anulada' : 'Aplicar asignación'}
-                >
-                  Aplicar
-                </button>
+                {isSup && (
+                  <button
+                    type="button"
+                    onClick={applyAssignment}
+                    style={{ ...S.btn, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                    disabled={assignmentLoading || !assignmentInfo || assignmentInfo?.estado !== 'PENDIENTE'}
+                    title={!assignmentInfo ? 'Valida el código primero' : assignmentInfo?.estado !== 'PENDIENTE' ? 'Esta asignación ya fue aplicada o anulada' : 'Aplicar asignación'}
+                  >
+                    Aplicar
+                  </button>
+                )}
               </div>
               {assignmentInfo && (
                 <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-soft)' }}>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)' }}>Origen:</span> {assignmentInfo.origen_nombre} ·{' '}
-                    <span style={{ color: 'var(--text-muted)' }}>Destino:</span> {assignmentInfo.destino_nombre} ·{' '}
-                    <span style={{ color: 'var(--text-muted)' }}>Items:</span> {assignmentInfo.total_items} ·{' '}
-                    <span style={{ color: 'var(--text-muted)' }}>Estado:</span> {assignmentInfo.estado}
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Código:</span> <span style={{ fontFamily: 'monospace', color: 'var(--text-strong)' }}>{assignmentInfo.codigo}</span></div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Estado:</span> {assignmentInfo.estado}</div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Origen:</span> {assignmentInfo.origen_nombre}</div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Destino:</span> {assignmentInfo.destino_nombre}</div>
+                    <div><span style={{ color: 'var(--text-muted)' }}>Items:</span> {assignmentInfo.total_items} · <span style={{ color: 'var(--text-muted)' }}>Unidades:</span> {assignmentInfo.total_unidades ?? '-'} · <span style={{ color: 'var(--text-muted)' }}>Total venta:</span> {formatBs(assignmentInfo.total_venta)}</div>
                   </div>
+
+                  {(assignmentInfo.items || []).length > 0 && (
+                    <div style={{ marginTop: 10 }} className="table-wrap">
+                      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                            <th style={{ padding: '6px 4px' }}>Tipo</th>
+                            <th style={{ padding: '6px 4px' }}>Marca</th>
+                            <th style={{ padding: '6px 4px' }}>Modelo/Tipo</th>
+                            <th style={{ padding: '6px 4px' }}>Año</th>
+                            <th style={{ padding: '6px 4px' }}>Color</th>
+                            <th style={{ padding: '6px 4px' }}>Cant.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {assignmentInfo.items.map((it) => (
+                            <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
+                              <td style={{ padding: '6px 4px' }}>{it.producto_tipo}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.tipo || '-'}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.cantidad}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -478,6 +519,8 @@ export default function Inventario() {
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Marca</th>
                       <th style={{ padding: '6px 4px' }}>Modelo</th>
+                      <th style={{ padding: '6px 4px' }}>Año</th>
+                      <th style={{ padding: '6px 4px' }}>Color</th>
                       <th style={{ padding: '6px 4px' }}>Cilindrada</th>
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
@@ -489,6 +532,8 @@ export default function Inventario() {
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
                         <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
+                        <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>
+                        <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
                         <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
@@ -498,6 +543,13 @@ export default function Inventario() {
                   </tbody>
                 </table>
               )}
+            </div>
+          )}
+
+          {tab !== 'marcas' && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-soft)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div><span style={{ color: 'var(--text-muted)' }}>Total unidades:</span> {listTotals.unidades}</div>
+              <div><span style={{ color: 'var(--text-muted)' }}>Total (precio venta):</span> {formatBs(listTotals.dinero)}</div>
             </div>
           )}
 

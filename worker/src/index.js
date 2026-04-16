@@ -997,8 +997,75 @@ async function handleAssignmentsCreate(request, env) {
   return json({ ok: true, data: { codigo } });
 }
 
+async function fetchAssignmentDetails(admin, asignacionId) {
+  const { data: items, error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .select('id, producto_tipo, producto_id, cantidad')
+    .eq('asignacion_id', asignacionId)
+    .order('id');
+  if (itemsError) throw new Error(itemsError.message);
+
+  const detailed = [];
+  const idsByKind = new Map();
+  for (const it of items || []) {
+    const kind = it.producto_tipo;
+    const list = idsByKind.get(kind) || [];
+    list.push(Number(it.producto_id));
+    idsByKind.set(kind, list);
+  }
+
+  const productsByKind = new Map();
+  for (const [kind, ids] of idsByKind.entries()) {
+    if (!PRODUCT_TABLES.includes(kind)) continue;
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (!uniqueIds.length) continue;
+    const { data: products, error } = await admin
+      .from(kind)
+      .select('id, marca, tipo, ano, color, cilindrada, precio_venta, precio_final, activo')
+      .in('id', uniqueIds);
+    if (error) throw new Error(error.message);
+    productsByKind.set(kind, new Map((products || []).map((p) => [Number(p.id), p])));
+  }
+
+  let totalUnidades = 0;
+  let totalVenta = 0;
+
+  for (const it of items || []) {
+    const kind = it.producto_tipo;
+    const pid = Number(it.producto_id);
+    const qty = Number(it.cantidad || 0);
+    const product = productsByKind.get(kind)?.get(pid) || null;
+    const precioVenta = Number(product?.precio_venta ?? product?.precio_final ?? 0);
+    const subtotal = precioVenta * qty;
+    totalUnidades += qty;
+    totalVenta += subtotal;
+
+    detailed.push({
+      id: it.id,
+      producto_tipo: kind,
+      producto_id: pid,
+      cantidad: qty,
+      marca: product?.marca ?? null,
+      tipo: product?.tipo ?? null,
+      ano: product?.ano ?? null,
+      color: product?.color ?? null,
+      cilindrada: product?.cilindrada ?? null,
+      precio_venta: Number.isFinite(precioVenta) ? precioVenta : 0,
+      subtotal: Number.isFinite(subtotal) ? subtotal : 0,
+      activo: product?.activo ?? null,
+    });
+  }
+
+  return {
+    total_items: (items || []).length,
+    total_unidades: totalUnidades,
+    total_venta: totalVenta,
+    items: detailed,
+  };
+}
+
 async function handleAssignmentsGet(request, env, code) {
-  const { admin } = await requireSupervisor(request, env);
+  const { admin, profile } = await requireAuth(request, env);
   const codigo = decodeURIComponent(code || '').trim();
   if (!codigo) return fail('Codigo requerido');
 
@@ -1009,6 +1076,13 @@ async function handleAssignmentsGet(request, env, code) {
     .single();
   if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
 
+  if (
+    profile.rol !== 'SUPERVISOR'
+    && Number(profile.punto_venta_id) !== Number(asignacion.destino_punto_venta_id)
+  ) {
+    return fail('No autorizado para ver este ticket', 403);
+  }
+
   const { data: points, error: pointsError } = await admin
     .from('puntos_venta')
     .select('id, nombre, tipo')
@@ -1018,12 +1092,13 @@ async function handleAssignmentsGet(request, env, code) {
   const origin = pointsMap.get(Number(asignacion.origen_punto_venta_id));
   const dest = pointsMap.get(Number(asignacion.destino_punto_venta_id));
 
-  const { data: items, error: itemsError } = await admin
-    .from('asignacion_inventario_items')
-    .select('id, producto_tipo, producto_id, cantidad')
-    .eq('asignacion_id', asignacion.id)
-    .order('id');
-  if (itemsError) return fail(itemsError.message, 500);
+  let details;
+  try {
+    details = await fetchAssignmentDetails(admin, asignacion.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(message, 500);
+  }
 
   return json({
     ok: true,
@@ -1036,8 +1111,10 @@ async function handleAssignmentsGet(request, env, code) {
       destino_punto_venta_id: asignacion.destino_punto_venta_id,
       origen_nombre: origin?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (origin?.nombre || 'Origen'),
       destino_nombre: dest?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (dest?.nombre || 'Destino'),
-      total_items: (items || []).length,
-      items: items || [],
+      total_items: details.total_items,
+      total_unidades: details.total_unidades,
+      total_venta: details.total_venta,
+      items: details.items,
     },
   });
 }

@@ -76,6 +76,13 @@ export default function UbicacionInventario() {
     if (sortDirection === 'desc') return left < right ? 1 : -1
     return left > right ? 1 : -1
   })
+  const listTotals = sortedItems.reduce((acc, row) => {
+    const qty = Number(row?.cantidad_libre || 0)
+    const price = Number(row?.precio_venta ?? row?.precio_final ?? 0)
+    acc.unidades += qty
+    acc.dinero += qty * price
+    return acc
+  }, { unidades: 0, dinero: 0 })
 
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
@@ -177,6 +184,8 @@ export default function UbicacionInventario() {
                 <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                   <th style={{ padding: '6px 4px' }}>Marca</th>
                   <th style={{ padding: '6px 4px' }}>Modelo</th>
+                  <th style={{ padding: '6px 4px' }}>Año</th>
+                  <th style={{ padding: '6px 4px' }}>Color</th>
                   <th style={{ padding: '6px 4px' }}>Cilindrada</th>
                   <th style={{ padding: '6px 4px' }}>Stock</th>
                   <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
@@ -187,6 +196,8 @@ export default function UbicacionInventario() {
                   <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                     <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
                     <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
+                    <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>
+                    <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
                     <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
                     <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                     <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
@@ -196,6 +207,11 @@ export default function UbicacionInventario() {
             </table>
           </div>
         )}
+
+        <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-soft)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div><span style={{ color: 'var(--text-muted)' }}>Total unidades:</span> {listTotals.unidades}</div>
+          <div><span style={{ color: 'var(--text-muted)' }}>Total (precio venta):</span> {formatBs(listTotals.dinero)}</div>
+        </div>
       </div>
     </div>
   )
