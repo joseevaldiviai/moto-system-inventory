@@ -1021,7 +1021,7 @@ async function fetchAssignmentDetails(admin, asignacionId) {
     if (!uniqueIds.length) continue;
     const { data: products, error } = await admin
       .from(kind)
-      .select('id, marca, tipo, ano, color, cilindrada, precio_venta, precio_final, activo')
+      .select('id, marca, tipo, ano, color, cilindrada, precio_venta, activo')
       .in('id', uniqueIds);
     if (error) throw new Error(error.message);
     productsByKind.set(kind, new Map((products || []).map((p) => [Number(p.id), p])));
