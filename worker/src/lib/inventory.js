@@ -1,7 +1,7 @@
 const TABLES = {
   motos: { table: 'motos', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
   motos_e: { table: 'motos_e', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
-  accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'tipo'] },
+  accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'tipo', 'talla'] },
   repuestos: { table: 'repuestos', select: '*, marcas(nombre)', search: ['marca', 'tipo'] },
 };
 
