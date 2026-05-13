@@ -35,20 +35,21 @@ export default function Inventario() {
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
-  const getModelLabel = (item) => item?.tipo || item?.ano || '-'
+  const getPrimaryLabel = (item) => item?.tipo || item?.ano || '-'
   const getCylinderLabel = (item) => item?.cilindrada || '-'
   const getSizeLabel = (item) => item?.talla || '-'
-  const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getCylinderLabel(item)}`.trim()
+  const getItemName = (item) => `${item?.marca || ''} ${getPrimaryLabel(item)} ${getCylinderLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
+  const isSparePartRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && !Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const buildGroupKey = (item, includeWarehouse = false) => ([
     normalizeGroupValue(item?.marca),
     normalizeGroupValue(item?.tipo),
-    normalizeGroupValue(item?.ano),
-    normalizeGroupValue(isAccessoryRow(item) ? '' : item?.color),
-    normalizeGroupValue(item?.talla),
-    normalizeGroupValue(item?.cilindrada),
-    normalizeGroupValue(item?.motor),
+    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
+    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
+    normalizeGroupValue(isAccessoryRow(item) ? '' : item?.talla),
+    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.cilindrada),
+    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.motor),
     normalizeGroupValue(item?.costo ?? item?.precio),
     includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
   ].join('||'))
@@ -302,11 +303,11 @@ export default function Inventario() {
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     accesorios: [
-      ['marca_id','Marca','marca'],['tipo','Tipo'],['color','Color'],['talla','Talla'],['precio','Costo'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['tipo','Codigo'],['color','Color'],['talla','Talla'],['precio','Costo'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     repuestos: [
-      ['marca_id','Marca','marca'],['tipo','Tipo'],['precio','Precio'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['tipo','Descripcion'],['precio','Precio'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
   }
@@ -321,12 +322,12 @@ export default function Inventario() {
       'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2'
     ].join('\n'),
     accesorios: [
-      'marca,tipo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'Givi,Parabrisas,Transparente,M,120,150,10,5'
+      'marca,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre',
+      'Givi,PAR-001,Transparente,M,120,150,10,5'
     ].join('\n'),
     repuestos: [
-      'marca,tipo,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'NGK,Bujía,15,20,10,20'
+      'marca,descripcion,precio,precio_final,descuento_maximo_pct,cantidad_libre',
+      'NGK,Bujia,15,20,10,20'
     ].join('\n'),
   }
 
@@ -443,7 +444,7 @@ export default function Inventario() {
                           <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                             <th style={{ padding: '6px 4px' }}>Tipo</th>
                             <th style={{ padding: '6px 4px' }}>Marca</th>
-                            <th style={{ padding: '6px 4px' }}>Modelo/Tipo</th>
+                            <th style={{ padding: '6px 4px' }}>Codigo / descripcion</th>
                             <th style={{ padding: '6px 4px' }}>Año</th>
                             <th style={{ padding: '6px 4px' }}>Color</th>
                             <th style={{ padding: '6px 4px' }}>Cant.</th>
@@ -523,11 +524,13 @@ export default function Inventario() {
                   <thead>
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Marca</th>
-                      <th style={{ padding: '6px 4px' }}>Modelo</th>
-                      <th style={{ padding: '6px 4px' }}>Año</th>
-                      <th style={{ padding: '6px 4px' }}>Color</th>
-                      <th style={{ padding: '6px 4px' }}>Talla</th>
-                      <th style={{ padding: '6px 4px' }}>Cilindrada</th>
+                      <th style={{ padding: '6px 4px' }}>
+                        {tab === 'accesorios' ? 'Codigo' : tab === 'repuestos' ? 'Descripcion' : 'Modelo'}
+                      </th>
+                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Año</th>}
+                      {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
+                      {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Talla</th>}
+                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Cilindrada</th>}
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>Costo</th>
@@ -538,11 +541,11 @@ export default function Inventario() {
                     {sortedDisplayedItems.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
-                        <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
-                        <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>
-                        <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
-                        <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>
-                        <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>
+                        <td style={{ padding: '6px 4px' }}>{getPrimaryLabel(it)}</td>
+                        {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>}
+                        {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
+                        {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
+                        {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>}
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.costo ?? it.precio)}</td>
@@ -663,7 +666,12 @@ export default function Inventario() {
                     {sortedPointItems.map((item) => (
                       <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)', fontSize: 12 }}>
                         <div style={{ color: 'var(--text-strong)' }}>
-                          {`${item.marca || '-'} · ${getModelLabel(item)} · ${item.color || '-'} · ${getSizeLabel(item)}`}
+                          {[
+                            item.marca || '-',
+                            getPrimaryLabel(item),
+                            tab !== 'repuestos' ? (item.color || '-') : null,
+                            tab !== 'repuestos' ? getSizeLabel(item) : null,
+                          ].filter(Boolean).join(' · ')}
                         </div>
                         <div style={{ color: 'var(--text-soft)' }}>
                           Libre: {item.cantidad_libre} · Reservado: {item.cantidad_reservada} · Vendido: {item.cantidad_vendida} · Precio: {formatBs(item.precio_venta ?? item.precio_final)}

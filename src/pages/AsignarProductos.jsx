@@ -11,7 +11,7 @@ const PRODUCT_TABS = [
 ]
 
 export default function AsignarProductos() {
-  const { token } = useAuthStore()
+  const { token, usuario, esSupervisor } = useAuthStore()
   const [puntos, setPuntos] = useState([])
   const [tab, setTab] = useState('motos')
   const [search, setSearch] = useState('')
@@ -26,6 +26,8 @@ export default function AsignarProductos() {
     items: [],
   })
   const [lastCode, setLastCode] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const isSup = esSupervisor()
 
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
@@ -42,14 +44,15 @@ export default function AsignarProductos() {
       if (!res.ok) return
       setPuntos(res.data)
       const central = res.data.find((p) => p.tipo === 'CENTRAL')
-      const firstPos = res.data.find((p) => p.tipo !== 'CENTRAL' && p.activo)
+      const userPoint = res.data.find((p) => Number(p.id) === Number(usuario?.punto_venta_id))
+      const firstPos = userPoint || res.data.find((p) => p.tipo !== 'CENTRAL' && p.activo)
       setForm((f) => ({
         ...f,
-        origen_punto_venta_id: f.origen_punto_venta_id || (central ? String(central.id) : ''),
-        destino_punto_venta_id: f.destino_punto_venta_id || (firstPos ? String(firstPos.id) : ''),
+        origen_punto_venta_id: f.origen_punto_venta_id || (isSup ? (central ? String(central.id) : '') : (firstPos ? String(firstPos.id) : '')),
+        destino_punto_venta_id: f.destino_punto_venta_id || (isSup ? (firstPos ? String(firstPos.id) : '') : (central ? String(central.id) : '')),
       }))
     })
-  }, [token])
+  }, [token, usuario?.punto_venta_id, isSup])
 
   const originId = form.origen_punto_venta_id ? Number(form.origen_punto_venta_id) : null
   const destinationId = form.destino_punto_venta_id ? Number(form.destino_punto_venta_id) : null
@@ -244,12 +247,14 @@ export default function AsignarProductos() {
         origen_punto_venta_id: originId,
         destino_punto_venta_id: destinationId,
         items: payloadItems,
+        autorizacion_password: isSup ? undefined : authPassword,
       },
     })
     if (!res?.ok) return toast.error(res?.error || 'No se pudo crear la asignación')
     setLastCode(res.data.codigo)
     toast.success(`Asignación creada: ${res.data.codigo}`)
     setForm((f) => ({ ...f, items: [] }))
+    if (!isSup) setAuthPassword('')
     loadTickets()
   }
 
@@ -407,6 +412,21 @@ export default function AsignarProductos() {
                 {destinationPoint.tipo === 'CENTRAL' ? '🏬 Almacén Central' : `🏪 ${destinationPoint.nombre}`}
               </div>
             )}
+            {!isSup && (
+              <div style={{ marginTop: 12 }}>
+                <div style={S.label}>Contraseña para autorizar</div>
+                <input
+                  style={S.input}
+                  type="password"
+                  placeholder="Ingresa tu contraseña"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                />
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
+                  Debes confirmar tu contraseña para habilitar la asignación entre almacén central y tu tienda.
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={S.card}>
@@ -444,7 +464,7 @@ export default function AsignarProductos() {
             )}
 
             <div className="button-row" style={{ marginTop: 12 }}>
-              <button type="button" onClick={submit} style={S.btnPrimary}>
+              <button type="button" onClick={submit} style={S.btnPrimary} disabled={!isSup && !authPassword.trim()}>
                 Generar código
               </button>
             </div>
@@ -513,4 +533,3 @@ export default function AsignarProductos() {
     </div>
   )
 }
-

@@ -292,7 +292,7 @@ export const api = {
     return request(`/assignments${suffix}`, { token });
   },
   obtenerAsignacionProductos: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}`, { token }),
-  aplicarAsignacionProductos: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}/apply`, { method: 'POST', token }),
+  aplicarAsignacionProductos: ({ token, codigo, data = {} }) => request(`/assignments/${encodeURIComponent(codigo)}/apply`, { method: 'POST', token, body: data }),
   crearRepuesto: ({ token, data }) => request('/products/repuestos', { method: 'POST', token, body: { data } }),
   actualizarRepuesto: ({ token, id, data }) => request(`/products/repuestos/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarRepuesto: ({ token, id }) => request(`/products/repuestos/${id}`, { method: 'DELETE', token }),

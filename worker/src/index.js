@@ -792,9 +792,15 @@ async function handleInventoryCreate(request, env, kind) {
   const data = kind === 'accesorios'
     ? {
         ...rawData,
+        tipo: (rawData?.tipo ?? rawData?.codigo ?? '').trim(),
         color: rawData?.color?.trim() ? rawData.color.trim() : null,
         talla: rawData?.talla?.trim() ? rawData.talla.trim() : null,
       }
+    : kind === 'repuestos'
+      ? {
+          ...rawData,
+          tipo: (rawData?.tipo ?? rawData?.descripcion ?? '').trim(),
+        }
     : rawData;
   const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos' || kind === 'motos_e');
   const stocks = normalizeStocks(data);
@@ -840,9 +846,15 @@ async function handleInventoryUpdate(request, env, kind, id) {
   const data = kind === 'accesorios'
     ? {
         ...rawData,
+        ...(rawData?.tipo !== undefined || rawData?.codigo !== undefined ? { tipo: (rawData?.tipo ?? rawData?.codigo ?? '').trim() } : {}),
         ...(rawData?.color !== undefined ? { color: rawData.color?.trim() ? rawData.color.trim() : null } : {}),
         ...(rawData?.talla !== undefined ? { talla: rawData.talla?.trim() ? rawData.talla.trim() : null } : {}),
       }
+    : kind === 'repuestos'
+      ? {
+          ...rawData,
+          ...(rawData?.tipo !== undefined || rawData?.descripcion !== undefined ? { tipo: (rawData?.tipo ?? rawData?.descripcion ?? '').trim() } : {}),
+        }
     : rawData;
   const patch = { ...data };
 
@@ -1337,10 +1349,8 @@ async function findAccessoryLike(admin, data) {
     .select('id, cantidad_libre, cantidad_reservada, cantidad_vendida')
     .eq('tipo', data.tipo)
     .eq('precio', data.precio)
-    .eq('precio_final', data.precio_final)
     .limit(1);
   query = data.marca === null ? query.is('marca', null) : query.eq('marca', data.marca);
-  query = data.talla === null ? query.is('talla', null) : query.eq('talla', data.talla);
   const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
   return rows?.[0] || null;
@@ -1487,14 +1497,15 @@ async function importInventoryCsv(request, env, kind) {
   }
 
   if (kind === 'accesorios') {
-    requireColumns(header, ['marca', 'tipo', 'color', 'talla', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    requireColumns(header, ['marca', 'color', 'talla', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    if (!header.includes('tipo') && !header.includes('codigo')) throw new Error('Columna requerida faltante: tipo o codigo');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, false);
       const data = {
         marca_id,
         marca: marca_nombre,
-        tipo: row.tipo,
+        tipo: (row.tipo || row.codigo || '').trim(),
         color: textOrNull(row.color),
         talla: textOrNull(row.talla),
         precio: requiredNumber(row.precio, 'precio'),
@@ -1512,14 +1523,15 @@ async function importInventoryCsv(request, env, kind) {
   }
 
   if (kind === 'repuestos') {
-    requireColumns(header, ['marca', 'tipo', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    requireColumns(header, ['marca', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    if (!header.includes('tipo') && !header.includes('descripcion')) throw new Error('Columna requerida faltante: tipo o descripcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, false);
       const data = {
         marca_id,
         marca: marca_nombre,
-        tipo: row.tipo,
+        tipo: (row.tipo || row.descripcion || '').trim(),
         precio: requiredNumber(row.precio, 'precio'),
         precio_final: requiredNumber(row.precio_final, 'precio_final'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),

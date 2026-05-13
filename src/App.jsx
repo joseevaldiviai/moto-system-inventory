@@ -87,7 +87,7 @@ export default function App() {
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
           <Route index             element={<Dashboard />} />
           <Route path="inventario" element={<Inventario />} />
-          <Route path="asignar-productos" element={<SupervisorRoute><AsignarProductos /></SupervisorRoute>} />
+          <Route path="asignar-productos" element={<AsignarProductos />} />
           <Route path="proformas"  element={<Proformas />} />
           <Route path="ventas"     element={<Ventas />} />
           <Route path="reportes"   element={<Reportes />} />
