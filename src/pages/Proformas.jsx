@@ -112,10 +112,10 @@ export default function Proformas() {
     }
     if (producto === 'accesorio') {
       const p = accesorios.find(a => a.id === id)
-      return p ? `${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
+      return p ? `${p.producto ? `${p.producto} ` : ''}${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
     }
     const p = repuestos.find(r => r.id === id)
-    return p ? `${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
+    return p ? `${p.producto ? `${p.producto} ` : ''}${p.marca ? p.marca + ' ' : ''}${p.tipo}`.trim() : ''
   }
 
   const getProducto = (producto, id) => {
@@ -141,7 +141,7 @@ export default function Proformas() {
 
   const formatProductoOption = (producto) => {
     if (itemForm.producto === 'moto' || itemForm.producto === 'moto_e') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
-    return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
+    return `${producto.producto ? `${producto.producto} · ` : ''}${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
   }
 
   const addItem = () => {

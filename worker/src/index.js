@@ -1,6 +1,6 @@
 import { json, empty, readJson, notFound, fail, attachment, withCors } from './lib/http';
 import { createAdminClient, createPublicClient, requireAuth, requireSupervisor } from './lib/supabase';
-import { getInventoryConfig, normalizeStocks, resolveMarca, validatePricing } from './lib/inventory';
+import { getInventoryConfig, normalizeStocks, normalizeUpperText, resolveMarca, validatePricing } from './lib/inventory';
 import { parseCsv, requireColumns, rowObject, requiredNumber, numberOrZero, textOrNull } from './lib/csv';
 
 const POINT_TYPES = {
@@ -9,6 +9,16 @@ const POINT_TYPES = {
 };
 
 const PRODUCT_TABLES = ['motos', 'motos_e', 'accesorios', 'repuestos'];
+
+function normalizeNullableUpperText(value) {
+  const normalized = normalizeUpperText(value);
+  return normalized || null;
+}
+
+function normalizeNullableText(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
+}
 
 async function transferInventoryStock({ admin, kind, productId, sourcePointId, destinationPointId, quantity }) {
   const centralPoint = await getCentralPoint(admin);
@@ -724,7 +734,7 @@ async function handleBrandsList(request, env) {
 async function handleBrandsCreate(request, env) {
   const { admin } = await requireSupervisor(request, env);
   const { data } = await readJson(request);
-  const nombre = (data?.nombre || '').trim();
+  const nombre = normalizeUpperText(data?.nombre);
   if (!nombre) return fail('Nombre requerido');
   const { data: created, error } = await admin.from('marcas').insert({ nombre }).select('id').single();
   if (error) return fail(error.message);
@@ -735,7 +745,7 @@ async function handleBrandsUpdate(request, env, id) {
   const { admin } = await requireSupervisor(request, env);
   const { data } = await readJson(request);
   const patch = {};
-  if (data.nombre !== undefined) patch.nombre = data.nombre?.trim();
+  if (data.nombre !== undefined) patch.nombre = normalizeUpperText(data.nombre);
   if (data.activo !== undefined) patch.activo = !!data.activo;
   const { error } = await admin.from('marcas').update(patch).eq('id', id);
   if (error) return fail(error.message);
@@ -792,17 +802,25 @@ async function handleInventoryCreate(request, env, kind) {
   const data = kind === 'accesorios'
     ? {
         ...rawData,
+        producto: normalizeNullableText(rawData?.producto),
         tipo: (rawData?.tipo ?? rawData?.codigo ?? '').trim(),
-        color: rawData?.color?.trim() ? rawData.color.trim() : null,
+        color: normalizeNullableUpperText(rawData?.color),
         talla: rawData?.talla?.trim() ? rawData.talla.trim() : null,
       }
     : kind === 'repuestos'
       ? {
           ...rawData,
+          producto: normalizeNullableText(rawData?.producto),
           tipo: (rawData?.tipo ?? rawData?.descripcion ?? '').trim(),
+        }
+    : kind === 'motos' || kind === 'motos_e'
+      ? {
+          ...rawData,
+          ...(rawData?.color !== undefined ? { color: normalizeNullableUpperText(rawData.color) } : {}),
         }
     : rawData;
   const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos' || kind === 'motos_e');
+  if ((kind === 'accesorios' || kind === 'repuestos') && !data.producto) return fail('Producto requerido');
   const stocks = normalizeStocks(data);
   validatePricing(data);
 
@@ -846,17 +864,27 @@ async function handleInventoryUpdate(request, env, kind, id) {
   const data = kind === 'accesorios'
     ? {
         ...rawData,
+        ...(rawData?.producto !== undefined ? { producto: normalizeNullableText(rawData.producto) } : {}),
         ...(rawData?.tipo !== undefined || rawData?.codigo !== undefined ? { tipo: (rawData?.tipo ?? rawData?.codigo ?? '').trim() } : {}),
-        ...(rawData?.color !== undefined ? { color: rawData.color?.trim() ? rawData.color.trim() : null } : {}),
+        ...(rawData?.color !== undefined ? { color: normalizeNullableUpperText(rawData.color) } : {}),
         ...(rawData?.talla !== undefined ? { talla: rawData.talla?.trim() ? rawData.talla.trim() : null } : {}),
       }
     : kind === 'repuestos'
       ? {
           ...rawData,
+          ...(rawData?.producto !== undefined ? { producto: normalizeNullableText(rawData.producto) } : {}),
           ...(rawData?.tipo !== undefined || rawData?.descripcion !== undefined ? { tipo: (rawData?.tipo ?? rawData?.descripcion ?? '').trim() } : {}),
+        }
+    : kind === 'motos' || kind === 'motos_e'
+      ? {
+          ...rawData,
+          ...(rawData?.color !== undefined ? { color: normalizeNullableUpperText(rawData.color) } : {}),
         }
     : rawData;
   const patch = { ...data };
+  if ((kind === 'accesorios' || kind === 'repuestos') && data.producto !== undefined && !data.producto) {
+    return fail('Producto requerido');
+  }
 
   if (data.marca_id !== undefined || data.marca !== undefined) {
     const { marca_id, marca_nombre } = await resolveMarca(admin, data, kind === 'motos' || kind === 'motos_e');
@@ -1069,7 +1097,7 @@ async function fetchAssignmentDetails(admin, asignacionId) {
     if (!uniqueIds.length) continue;
     const { data: products, error } = await admin
       .from(kind)
-      .select('id, marca, tipo, ano, color, cilindrada, precio_venta, activo')
+      .select('id, marca, producto, tipo, ano, color, cilindrada, precio_venta, precio_final, activo')
       .in('id', uniqueIds);
     if (error) throw new Error(error.message);
     productsByKind.set(kind, new Map((products || []).map((p) => [Number(p.id), p])));
@@ -1094,6 +1122,7 @@ async function fetchAssignmentDetails(admin, asignacionId) {
       producto_id: pid,
       cantidad: qty,
       marca: product?.marca ?? null,
+      producto: product?.producto ?? null,
       tipo: product?.tipo ?? null,
       ano: product?.ano ?? null,
       color: product?.color ?? null,
@@ -1351,6 +1380,7 @@ async function findAccessoryLike(admin, data) {
     .eq('precio', data.precio)
     .limit(1);
   query = data.marca === null ? query.is('marca', null) : query.eq('marca', data.marca);
+  query = data.producto === null ? query.is('producto', null) : query.eq('producto', data.producto);
   const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
   return rows?.[0] || null;
@@ -1362,6 +1392,7 @@ async function upsertAccesorioFromCsv(admin, data) {
     const { error } = await admin.from('accesorios').update({
       marca_id: data.marca_id,
       marca: data.marca,
+      producto: data.producto,
       tipo: data.tipo,
       color: data.color,
       talla: data.talla,
@@ -1378,6 +1409,7 @@ async function upsertAccesorioFromCsv(admin, data) {
   const { error } = await admin.from('accesorios').insert({
     marca_id: data.marca_id,
     marca: data.marca,
+    producto: data.producto,
     tipo: data.tipo,
     color: data.color,
     talla: data.talla,
@@ -1395,6 +1427,7 @@ async function upsertAccesorioFromCsv(admin, data) {
 async function findRepuestoLike(admin, data) {
   let query = admin.from('repuestos').select('id').eq('tipo', data.tipo).limit(1);
   query = data.marca === null ? query.is('marca', null) : query.eq('marca', data.marca);
+  query = data.producto === null ? query.is('producto', null) : query.eq('producto', data.producto);
   const { data: rows, error } = await query;
   if (error) throw new Error(error.message);
   return rows?.[0] || null;
@@ -1406,6 +1439,7 @@ async function upsertRepuestoFromCsv(admin, data) {
     const { error } = await admin.from('repuestos').update({
       marca_id: data.marca_id,
       marca: data.marca,
+      producto: data.producto,
       tipo: data.tipo,
       precio: data.precio,
       precio_final: data.precio_final,
@@ -1420,6 +1454,7 @@ async function upsertRepuestoFromCsv(admin, data) {
   const { error } = await admin.from('repuestos').insert({
     marca_id: data.marca_id,
     marca: data.marca,
+    producto: data.producto,
     tipo: data.tipo,
     precio: data.precio,
     precio_final: data.precio_final,
@@ -1450,7 +1485,7 @@ async function importInventoryCsv(request, env, kind) {
         marca: marca_nombre,
         ano: row.ano,
         tipo: textOrNull(row.tipo),
-        color: textOrNull(row.color),
+        color: normalizeNullableUpperText(row.color),
         chasis: row.chasis,
         cilindrada: textOrNull(row.cilindrada),
         motor: textOrNull(row.motor),
@@ -1478,7 +1513,7 @@ async function importInventoryCsv(request, env, kind) {
         marca: marca_nombre,
         ano: row.ano,
         tipo: textOrNull(row.tipo),
-        color: textOrNull(row.color),
+        color: normalizeNullableUpperText(row.color),
         chasis: row.chasis,
         potencia: textOrNull(row.potencia),
         motor: textOrNull(row.motor),
@@ -1497,7 +1532,7 @@ async function importInventoryCsv(request, env, kind) {
   }
 
   if (kind === 'accesorios') {
-    requireColumns(header, ['marca', 'color', 'talla', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    requireColumns(header, ['marca', 'producto', 'color', 'talla', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
     if (!header.includes('tipo') && !header.includes('codigo')) throw new Error('Columna requerida faltante: tipo o codigo');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
@@ -1505,8 +1540,9 @@ async function importInventoryCsv(request, env, kind) {
       const data = {
         marca_id,
         marca: marca_nombre,
+        producto: normalizeNullableText(row.producto) ?? (row.tipo || row.codigo || '').trim(),
         tipo: (row.tipo || row.codigo || '').trim(),
-        color: textOrNull(row.color),
+        color: normalizeNullableUpperText(row.color),
         talla: textOrNull(row.talla),
         precio: requiredNumber(row.precio, 'precio'),
         precio_final: requiredNumber(row.precio_final, 'precio_final'),
@@ -1514,7 +1550,7 @@ async function importInventoryCsv(request, env, kind) {
         cantidad_libre: numberOrZero(row.cantidad_libre),
       };
 
-      if (!data.tipo) throw new Error(`Fila ${index + 2}: tipo requerido`);
+      if (!data.producto || !data.tipo) throw new Error(`Fila ${index + 2}: producto y tipo requeridos`);
       validatePricing(data);
       const operation = await upsertAccesorioFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
@@ -1523,7 +1559,7 @@ async function importInventoryCsv(request, env, kind) {
   }
 
   if (kind === 'repuestos') {
-    requireColumns(header, ['marca', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
+    requireColumns(header, ['marca', 'producto', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
     if (!header.includes('tipo') && !header.includes('descripcion')) throw new Error('Columna requerida faltante: tipo o descripcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
@@ -1531,6 +1567,7 @@ async function importInventoryCsv(request, env, kind) {
       const data = {
         marca_id,
         marca: marca_nombre,
+        producto: normalizeNullableText(row.producto) ?? (row.tipo || row.descripcion || '').trim(),
         tipo: (row.tipo || row.descripcion || '').trim(),
         precio: requiredNumber(row.precio, 'precio'),
         precio_final: requiredNumber(row.precio_final, 'precio_final'),
@@ -1538,7 +1575,7 @@ async function importInventoryCsv(request, env, kind) {
         cantidad_libre: numberOrZero(row.cantidad_libre),
       };
 
-      if (!data.tipo) throw new Error(`Fila ${index + 2}: tipo requerido`);
+      if (!data.producto || !data.tipo) throw new Error(`Fila ${index + 2}: producto y tipo requeridos`);
       validatePricing(data);
       const operation = await upsertRepuestoFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
@@ -1704,6 +1741,61 @@ async function handleSalesGet(request, env, id) {
     .order('id');
   if (itemsError) return fail(itemsError.message, 500);
 
+  const accesorioIds = [...new Set((items || []).map((item) => Number(item.accesorio_id)).filter(Boolean))];
+  const repuestoIds = [...new Set((items || []).map((item) => Number(item.repuesto_id)).filter(Boolean))];
+  const motoIds = [...new Set((items || []).map((item) => Number(item.moto_id)).filter(Boolean))];
+  const motoEIds = [...new Set((items || []).map((item) => Number(item.moto_e_id)).filter(Boolean))];
+
+  const [accesoriosRes, repuestosRes, motosRes, motosERes] = await Promise.all([
+    accesorioIds.length
+      ? admin.from('accesorios').select('id, producto, tipo, marca, talla, color').in('id', accesorioIds)
+      : Promise.resolve({ data: [], error: null }),
+    repuestoIds.length
+      ? admin.from('repuestos').select('id, producto, tipo, marca').in('id', repuestoIds)
+      : Promise.resolve({ data: [], error: null }),
+    motoIds.length
+      ? admin.from('motos').select('id, marca, ano, tipo, motor, chasis, color').in('id', motoIds)
+      : Promise.resolve({ data: [], error: null }),
+    motoEIds.length
+      ? admin.from('motos_e').select('id, marca, ano, tipo, motor, chasis, color').in('id', motoEIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (accesoriosRes.error) return fail(accesoriosRes.error.message, 500);
+  if (repuestosRes.error) return fail(repuestosRes.error.message, 500);
+  if (motosRes.error) return fail(motosRes.error.message, 500);
+  if (motosERes.error) return fail(motosERes.error.message, 500);
+
+  const accesoriosMap = new Map((accesoriosRes.data || []).map((row) => [Number(row.id), row]));
+  const repuestosMap = new Map((repuestosRes.data || []).map((row) => [Number(row.id), row]));
+  const motosMap = new Map((motosRes.data || []).map((row) => [Number(row.id), row]));
+  const motosEMap = new Map((motosERes.data || []).map((row) => [Number(row.id), row]));
+
+  const enrichedItems = (items || []).map((item) => {
+    const accesorio = item.accesorio_id ? accesoriosMap.get(Number(item.accesorio_id)) : null;
+    const repuesto = item.repuesto_id ? repuestosMap.get(Number(item.repuesto_id)) : null;
+    const moto = item.moto_id ? motosMap.get(Number(item.moto_id)) : null;
+    const motoE = item.moto_e_id ? motosEMap.get(Number(item.moto_e_id)) : null;
+    const referenciaMoto = moto
+      ? [moto.marca, moto.ano, moto.chasis].filter(Boolean).join(' ')
+      : motoE
+        ? [motoE.marca, motoE.ano, motoE.chasis].filter(Boolean).join(' ')
+        : null;
+
+    return {
+      ...item,
+      producto: accesorio?.producto ?? repuesto?.producto ?? null,
+      tipo: accesorio?.tipo ?? repuesto?.tipo ?? null,
+      marca: accesorio?.marca ?? repuesto?.marca ?? moto?.marca ?? motoE?.marca ?? null,
+      modelo: moto?.tipo ?? motoE?.tipo ?? moto?.ano ?? motoE?.ano ?? null,
+      motor: moto?.motor ?? motoE?.motor ?? null,
+      chasis: moto?.chasis ?? motoE?.chasis ?? null,
+      talla: accesorio?.talla ?? null,
+      color: accesorio?.color ?? moto?.color ?? motoE?.color ?? null,
+      referencia_moto: referenciaMoto,
+    };
+  });
+
   const { data: tramites, error: tramitesError } = await admin
     .from('tramites')
     .select('*')
@@ -1717,7 +1809,7 @@ async function handleSalesGet(request, env, id) {
       vendedor_nombre: venta.user_profiles?.nombre ?? null,
       punto_venta_nombre: venta.punto_venta_id ? (await getPointById(admin, venta.punto_venta_id)).nombre : null,
       user_profiles: undefined,
-      items: items || [],
+      items: enrichedItems,
       tramites: tramites || [],
     },
   });
@@ -2130,8 +2222,8 @@ async function handleInventoryExport(request, env, kind) {
   const tableConfigs = {
     motos: { columns: ['Marca', 'Ano', 'Chasis', 'Stock', 'Precio de Venta'], map: (row) => [row.marca, row.ano, row.chasis, row.cantidad_libre, row.precio_venta] },
     motos_e: { columns: ['Marca', 'Ano', 'Chasis', 'Potencia', 'Stock', 'Precio de Venta'], map: (row) => [row.marca, row.ano, row.chasis, row.potencia ?? '', row.cantidad_libre, row.precio_venta] },
-    accesorios: { columns: ['Tipo', 'Marca', 'Color', 'Talla', 'Stock', 'Precio Final'], map: (row) => [row.tipo, row.marca ?? '', row.color ?? '', row.talla ?? '', row.cantidad_libre, row.precio_final] },
-    repuestos: { columns: ['Tipo', 'Marca', 'Stock', 'Precio Final'], map: (row) => [row.tipo, row.marca ?? '', row.cantidad_libre, row.precio_final] },
+    accesorios: { columns: ['Producto', 'Codigo', 'Marca', 'Color', 'Talla', 'Stock', 'Precio Final'], map: (row) => [row.producto ?? '', row.tipo, row.marca ?? '', row.color ?? '', row.talla ?? '', row.cantidad_libre, row.precio_final] },
+    repuestos: { columns: ['Producto', 'Descripcion', 'Marca', 'Stock', 'Precio Final'], map: (row) => [row.producto ?? '', row.tipo, row.marca ?? '', row.cantidad_libre, row.precio_final] },
   };
 
   if (kind === 'productos') {
@@ -2145,6 +2237,7 @@ async function handleInventoryExport(request, env, kind) {
           table === 'motos_e' ? 'moto-e' : table.slice(0, -1),
           row.marca ?? '',
           row.ano ?? row.modelo ?? '',
+          row.producto ?? '',
           row.tipo ?? '',
           row.color ?? '',
           row.talla ?? '',
@@ -2157,7 +2250,7 @@ async function handleInventoryExport(request, env, kind) {
 
     return attachment(
       buildCsv(
-        ['Categoria', 'Marca', 'Ano', 'Tipo', 'Color', 'Talla', 'Chasis', 'Stock', 'Precio Venta'],
+        ['Categoria', 'Marca', 'Ano', 'Producto', 'Tipo', 'Color', 'Talla', 'Chasis', 'Stock', 'Precio Venta'],
         rows
       ),
       `productos-${Date.now()}.csv`,

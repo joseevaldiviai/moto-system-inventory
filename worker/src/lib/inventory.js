@@ -1,9 +1,14 @@
 const TABLES = {
   motos: { table: 'motos', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
   motos_e: { table: 'motos_e', select: '*, marcas(nombre)', search: ['marca', 'ano', 'chasis'] },
-  accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'tipo', 'talla'] },
-  repuestos: { table: 'repuestos', select: '*, marcas(nombre)', search: ['marca', 'tipo'] },
+  accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'producto', 'tipo', 'talla'] },
+  repuestos: { table: 'repuestos', select: '*, marcas(nombre)', search: ['marca', 'producto', 'tipo'] },
 };
+
+export function normalizeUpperText(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized ? normalized.toLocaleUpperCase('es') : '';
+}
 
 export function validatePricing({ precio, precio_final, costo, precio_venta, descuento_maximo_pct }) {
   const costValue = costo ?? precio;
@@ -30,7 +35,7 @@ export function normalizeStocks(data) {
 export async function resolveMarca(admin, data, required = false) {
   let marcaId = data?.marca_id ?? null;
   if (marcaId === '' || marcaId === 0) marcaId = null;
-  const marcaNombre = (data?.marca ?? '').trim();
+  const marcaNombre = normalizeUpperText(data?.marca);
 
   if (marcaId) {
     const { data: row, error } = await admin

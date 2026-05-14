@@ -36,14 +36,16 @@ export default function Inventario() {
       : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
   const getPrimaryLabel = (item) => item?.tipo || item?.ano || '-'
+  const getProductLabel = (item) => item?.producto || '-'
   const getCylinderLabel = (item) => item?.cilindrada || '-'
   const getSizeLabel = (item) => item?.talla || '-'
-  const getItemName = (item) => `${item?.marca || ''} ${getPrimaryLabel(item)} ${getCylinderLabel(item)}`.trim()
+  const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getPrimaryLabel(item)} ${getCylinderLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const isSparePartRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && !Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const buildGroupKey = (item, includeWarehouse = false) => ([
     normalizeGroupValue(item?.marca),
+    normalizeGroupValue(item?.producto),
     normalizeGroupValue(item?.tipo),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
@@ -187,7 +189,7 @@ export default function Inventario() {
   }
 
   const handleCrearMarca = async () => {
-    const nombre = marcaForm.nombre?.trim()
+    const nombre = marcaForm.nombre?.trim().toLocaleUpperCase('es')
     if (!nombre) return toast.error('Ingresa un nombre')
     const res = await api.crearMarca({ token, data: { nombre } })
     if (!res.ok) return toast.error(res.error || 'Error')
@@ -303,11 +305,11 @@ export default function Inventario() {
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     accesorios: [
-      ['marca_id','Marca','marca'],['tipo','Codigo'],['color','Color'],['talla','Talla'],['precio','Costo'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Codigo'],['color','Color'],['talla','Talla'],['precio','Costo'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     repuestos: [
-      ['marca_id','Marca','marca'],['tipo','Descripcion'],['precio','Precio'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Descripcion'],['precio','Precio'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
   }
@@ -322,12 +324,12 @@ export default function Inventario() {
       'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2'
     ].join('\n'),
     accesorios: [
-      'marca,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'Givi,PAR-001,Transparente,M,120,150,10,5'
+      'marca,producto,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre',
+      'Givi,PARABRISAS,PAR-001,TRANSPARENTE,M,120,150,10,5'
     ].join('\n'),
     repuestos: [
-      'marca,descripcion,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'NGK,Bujia,15,20,10,20'
+      'marca,producto,descripcion,precio,precio_final,descuento_maximo_pct,cantidad_libre',
+      'NGK,BUJIA,Bujia,15,20,10,20'
     ].join('\n'),
   }
 
@@ -444,6 +446,7 @@ export default function Inventario() {
                           <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                             <th style={{ padding: '6px 4px' }}>Tipo</th>
                             <th style={{ padding: '6px 4px' }}>Marca</th>
+                            <th style={{ padding: '6px 4px' }}>Producto</th>
                             <th style={{ padding: '6px 4px' }}>Codigo / descripcion</th>
                             <th style={{ padding: '6px 4px' }}>Año</th>
                             <th style={{ padding: '6px 4px' }}>Color</th>
@@ -455,6 +458,7 @@ export default function Inventario() {
                             <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                               <td style={{ padding: '6px 4px' }}>{it.producto_tipo}</td>
                               <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                              <td style={{ padding: '6px 4px' }}>{it.producto || '-'}</td>
                               <td style={{ padding: '6px 4px' }}>{it.tipo || '-'}</td>
                               <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>
                               <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
@@ -524,6 +528,7 @@ export default function Inventario() {
                   <thead>
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Marca</th>
+                      {(tab === 'accesorios' || tab === 'repuestos') && <th style={{ padding: '6px 4px' }}>Producto</th>}
                       <th style={{ padding: '6px 4px' }}>
                         {tab === 'accesorios' ? 'Codigo' : tab === 'repuestos' ? 'Descripcion' : 'Modelo'}
                       </th>
@@ -541,6 +546,7 @@ export default function Inventario() {
                     {sortedDisplayedItems.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                        {(tab === 'accesorios' || tab === 'repuestos') && <td style={{ padding: '6px 4px' }}>{getProductLabel(it)}</td>}
                         <td style={{ padding: '6px 4px' }}>{getPrimaryLabel(it)}</td>
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>}
                         {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
@@ -585,7 +591,7 @@ export default function Inventario() {
                     style={S.input}
                     placeholder="Nombre de marca"
                     value={marcaForm.nombre}
-                    onChange={e => setMarcaForm({ nombre: e.target.value })}
+                    onChange={e => setMarcaForm({ nombre: e.target.value.toLocaleUpperCase('es') })}
                   />
                   <button onClick={handleCrearMarca} style={S.btn}>Agregar</button>
                 </div>
@@ -614,7 +620,10 @@ export default function Inventario() {
                           <input
                             style={S.input}
                             value={form[key] ?? ''}
-                            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                            onChange={e => setForm(f => ({
+                              ...f,
+                              [key]: key === 'color' ? e.target.value.toLocaleUpperCase('es') : e.target.value,
+                            }))}
                           />
                         )}
                       </div>
@@ -668,6 +677,7 @@ export default function Inventario() {
                         <div style={{ color: 'var(--text-strong)' }}>
                           {[
                             item.marca || '-',
+                            tab === 'accesorios' || tab === 'repuestos' ? getProductLabel(item) : null,
                             getPrimaryLabel(item),
                             tab !== 'repuestos' ? (item.color || '-') : null,
                             tab !== 'repuestos' ? getSizeLabel(item) : null,

@@ -25,14 +25,36 @@ export default function Ventas() {
   const [detail, setDetail] = useState(null)
   const [tramites, setTramites] = useState({})
   const [costos, setCostos] = useState({ bsisa: 0, placa: 0 })
+  const [lastSale, setLastSale] = useState(null)
   const inventoryParams = esSupervisor()
     ? { scope: 'central' }
     : usuario?.punto_venta_id
       ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
       : null
   const canOperate = esSupervisor() || !!usuario?.punto_venta_id
+  const isCentralSaleContext = esSupervisor() || usuario?.punto_venta_tipo === 'CENTRAL'
 
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const formatPrintDate = (value) => {
+    const date = value ? new Date(value) : new Date()
+    if (Number.isNaN(date.getTime())) return '__/__/____'
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = String(date.getFullYear())
+    return `${day}/${month}/${year}`
+  }
+  const formatLongPrintDate = (value) => {
+    const date = value ? new Date(value) : new Date()
+    if (Number.isNaN(date.getTime())) return '____ de __________ de 20__'
+    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    return `${String(date.getDate()).padStart(2, '0')} de ${months[date.getMonth()]} de ${date.getFullYear()}`
+  }
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 
   const load = async () => {
     const [p, m, me, a, r, marcasRes] = await Promise.all([
@@ -88,12 +110,12 @@ export default function Ventas() {
     const selected = getProducto(producto, id)
     if (!selected) return ''
     if (producto === 'moto' || producto === 'moto_e') return `${selected.marca} ${selected.ano ?? selected.modelo}`.trim()
-    return `${selected.marca ? `${selected.marca} ` : ''}${selected.tipo}`.trim()
+    return `${selected.producto ? `${selected.producto} ` : ''}${selected.marca ? `${selected.marca} ` : ''}${selected.tipo}`.trim()
   }
 
   const formatProductoOption = (producto) => {
     if (itemForm.producto === 'moto' || itemForm.producto === 'moto_e') return `${producto.marca} ${producto.ano ?? producto.modelo} · ${producto.chasis}`
-    return `${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
+    return `${producto.producto ? `${producto.producto} · ` : ''}${producto.tipo}${producto.marca ? ` · ${producto.marca}` : ''}${producto.color ? ` · ${producto.color}` : ''}`
   }
 
   const addItem = () => {
@@ -184,7 +206,9 @@ export default function Ventas() {
     })
     if (!res.ok) return toast.error(res.error || 'Error')
 
+    setLastSale({ id: res.data.id })
     toast.success('Venta registrada')
+    await printSaleDocuments(res.data.id)
     setItems([])
     setCliente({ nombre: '', ci_nit: '', celular: '' })
     load()
@@ -213,10 +237,278 @@ export default function Ventas() {
 
     const res = await api.crearVenta({ token, data: { proforma_id: id, tramites: tramitesPayload } })
     if (!res.ok) return toast.error(res.error || 'Error')
+    setLastSale({ id: res.data.id })
     toast.success('Venta consolidada')
+    await printSaleDocuments(res.data.id)
     setDetail(null)
     setTramites({})
     load()
+  }
+
+  const openPrintableHtml = (title, bodyHtml) => {
+    const w = window.open('', '_blank')
+    if (!w) {
+      toast.error('Permite ventanas emergentes para imprimir')
+      return
+    }
+    w.document.open()
+    w.document.write(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #000; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    th, td { border: 1px solid #000; padding: 6px; font-size: 12px; text-align: left; vertical-align: top; }
+    h2 { margin: 0 0 12px; font-size: 22px; }
+    .sheet { width: 500px; border: 1px solid #000; padding: 20px; margin: 0 auto; box-sizing: border-box; }
+    .print-btn { margin-bottom: 12px; }
+    @media print {
+      body { margin: 0; }
+      .print-btn { display: none; }
+      .sheet { border: 1px solid #000; margin: 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <button class="print-btn" onclick="window.print()">Imprimir / Guardar como PDF</button>
+  ${bodyHtml}
+</body>
+</html>`)
+    w.document.close()
+    setTimeout(() => w.focus(), 50)
+  }
+
+  const printSaleDocuments = async (saleId) => {
+    if (!saleId) return
+    const res = await api.obtenerVenta({ token, id: saleId })
+    if (!res?.ok) {
+      toast.error(res?.error || 'No se pudo preparar la impresión')
+      return
+    }
+
+    const sale = res.data
+    setLastSale({ id: sale.id, codigo: sale.codigo })
+    const saleCode = sale.codigo || '________'
+    const printDate = formatPrintDate(sale.fecha_venta)
+    const longPrintDate = formatLongPrintDate(sale.fecha_venta)
+    const tramitesRows = (sale.tramites || []).map((tramite) => {
+      const item = (sale.items || []).find((entry) => Number(entry.id) === Number(tramite.venta_item_id))
+      return `
+        <tr>
+          <td>${escapeHtml(tramite.tipo || tramite.nombre || '')}</td>
+          <td>${escapeHtml(sale.cliente_celular || sale.cliente_nombre || '')}</td>
+          <td>${escapeHtml(item?.referencia_moto || item?.descripcion || '')}</td>
+          <td>${Number(tramite.a_cuenta ?? 0).toFixed(2)}</td>
+          <td>${Number(tramite.saldo ?? 0).toFixed(2)}</td>
+          <td>${Number(tramite.costo_total ?? 0).toFixed(2)}</td>
+        </tr>
+      `
+    })
+
+    const tramitesTotal = (sale.tramites || []).reduce((sum, item) => sum + Number(item.costo_total || 0), 0)
+    if (tramitesRows.length) {
+      const blankRows = Array.from({ length: Math.max(0, 2 - tramitesRows.length) }, () => (
+        '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+      )).join('')
+      openPrintableHtml(
+        `tramites-${saleCode}`,
+        `<div class="sheet">
+          <div style="text-align: right;">N° ${escapeHtml(saleCode)}</div>
+          <h2 style="text-align: center;">ORDEN DE SERVICIO</h2>
+          <p>Fecha: ${escapeHtml(printDate)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Servicio solicitado</th>
+                <th>Contacto</th>
+                <th>Motocicleta/Ref.</th>
+                <th>Adelanto Bs.</th>
+                <th>Saldo Bs.</th>
+                <th>Total Bs.</th>
+              </tr>
+            </thead>
+            <tbody>${tramitesRows.join('')}${blankRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5" style="text-align: right;"><strong>TOTAL</strong></td>
+                <td>${tramitesTotal.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <p><strong>Observaciones:</strong> ${escapeHtml((sale.tramites || []).map((item) => item.observaciones).filter(Boolean).join(' | ')) || '__________________________________________'}</p>
+          <div style="margin-top: 50px; display: flex; justify-content: space-between; text-align: center;">
+            <div style="width: 45%; border-top: 1px solid #000;">Firma Cliente</div>
+            <div style="width: 45%; border-top: 1px solid #000;">Firma Vendedor</div>
+          </div>
+          <p style="text-align: center; font-size: 10px; margin-top: 20px;">PARA TRAMITES</p>
+        </div>`
+      )
+    }
+
+    const deliveredItems = (sale.items || []).filter((item) => item.accesorio_id || item.repuesto_id)
+    const deliveryRows = deliveredItems.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.tipo || '')}</td>
+        <td>${escapeHtml(item.producto || '')}</td>
+        <td>${escapeHtml(item.marca || '')}</td>
+        <td>${escapeHtml([item.descripcion, item.talla ? `Talla ${item.talla}` : ''].filter(Boolean).join(' / '))}</td>
+        <td>${Number(item.precio_unitario_final ?? 0).toFixed(2)}</td>
+        <td>${Number(item.cantidad ?? 0)}</td>
+        <td>${Number(item.subtotal ?? 0).toFixed(2)}</td>
+      </tr>
+    `)
+    const deliveryTotal = deliveredItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0)
+    if (deliveryRows.length) {
+      const blankRows = Array.from({ length: Math.max(0, 2 - deliveryRows.length) }, () => (
+        '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
+      )).join('')
+      openPrintableHtml(
+        `entrega-${saleCode}`,
+        `<div class="sheet">
+          <div style="text-align: right;">N° ${escapeHtml(saleCode)}</div>
+          <h2 style="text-align: center;">CONSTANCIA DE ENTREGA</h2>
+          <p>Fecha: ${escapeHtml(printDate)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Producto</th>
+                <th>Marca</th>
+                <th>Descripción/Talla</th>
+                <th>P. Unitario</th>
+                <th>Cant.</th>
+                <th>Monto Bs.</th>
+              </tr>
+            </thead>
+            <tbody>${deliveryRows.join('')}${blankRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6" style="text-align: right;"><strong>TOTAL</strong></td>
+                <td>${deliveryTotal.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <p><strong>Observaciones:</strong> __________________________________________</p>
+          <div style="margin-top: 50px; display: flex; justify-content: space-between; text-align: center;">
+            <div style="width: 45%; border-top: 1px solid #000;">Firma Cliente</div>
+            <div style="width: 45%; border-top: 1px solid #000;">Firma Vendedor</div>
+          </div>
+        </div>`
+      )
+    }
+
+    const motoItems = (sale.items || []).filter((item) => item.moto_id || item.moto_e_id)
+    motoItems.forEach((item, index) => {
+      openPrintableHtml(
+        `moto-${saleCode}-${index + 1}`,
+        `<div class="sheet" style="font-size: 12px;">
+          <h2 style="text-align: center;">ENTREGA DE MOTOCICLETA</h2>
+          <p style="text-align: right;">Cochabamba, ${escapeHtml(longPrintDate)}</p>
+          <p>Venta a: ${escapeHtml(sale.cliente_nombre || '_________________________')} [ ] Crédito [ ] Contado</p>
+          <fieldset style="margin-bottom: 15px;">
+              <legend><strong>CARACTERÍSTICAS DE LA MOTO</strong></legend>
+              <p>Marca: ${escapeHtml(item.marca || '____________________')} Modelo: ${escapeHtml(item.modelo || '____________________')}</p>
+              <p>N° Motor: ${escapeHtml(item.motor || '__________________')} N° Chasis: ${escapeHtml(item.chasis || '_________________')}</p>
+              <p>Color: ${escapeHtml(item.color || '____________________')}</p>
+          </fieldset>
+          <div style="border: 1px solid #000; padding: 10px; margin-bottom: 15px;">
+              <p><strong>OBSERVACIONES:</strong> EL TIEMPO DE GARANTÍA ES DE 1 AÑO O 12000 KM.</p>
+              <p><strong>IMPORTANTE:</strong> ES OBLIGATORIO REALIZAR EL PRIMER MANTENIMIENTO A LOS 300 KM EN UN TALLER AUTORIZADO.</p>
+          </div>
+          <table style="width: 100%; margin-top: 30px; text-align: left;">
+              <tr>
+                  <td>Recibido por: ${escapeHtml(sale.cliente_nombre || '_________________')}</td>
+                  <td>Entregado por: ${escapeHtml(usuario?.nombre || '________________')}</td>
+              </tr>
+              <tr>
+                  <td>N° C.I.: ${escapeHtml(sale.cliente_ci_nit || '______________________')}</td>
+                  <td>N° C.I.: ______________________</td>
+              </tr>
+          </table>
+          <p style="text-align: center; margin-top: 20px;"><i>"La moto se encuentra en perfectas condiciones de funcionamiento."</i></p>
+        </div>`
+      )
+    })
+
+    if (!tramitesRows.length && !deliveryRows.length && !motoItems.length) {
+      toast('La venta no tiene trámites, repuestos ni accesorios para imprimir')
+    }
+  }
+
+  const printCentralMotoSaleNote = async (saleId) => {
+    if (!saleId) return
+    if (!isCentralSaleContext) {
+      toast.error('Esta impresión solo está disponible para ventas desde almacén central')
+      return
+    }
+
+    const res = await api.obtenerVenta({ token, id: saleId })
+    if (!res?.ok) {
+      toast.error(res?.error || 'No se pudo preparar la impresión')
+      return
+    }
+
+    const sale = res.data
+    setLastSale({ id: sale.id, codigo: sale.codigo })
+    const motoItems = (sale.items || []).filter((item) => item.moto_id || item.moto_e_id)
+    if (!motoItems.length) {
+      toast('La venta no tiene motos para esta impresión')
+      return
+    }
+
+    const longPrintDate = formatLongPrintDate(sale.fecha_venta)
+    const rows = motoItems.map((item) => `
+      <tr>
+        <td>${escapeHtml(item.marca || '')}</td>
+        <td>${escapeHtml(item.modelo || '')}</td>
+        <td>${escapeHtml(item.motor || '')}</td>
+        <td>${escapeHtml(item.chasis || '')}</td>
+        <td>${escapeHtml(item.color || '')}</td>
+        <td>${Number(item.cantidad || 0)}</td>
+      </tr>
+    `).join('')
+
+    openPrintableHtml(
+      `nota-motos-${sale.codigo || sale.id}`,
+      `<div class="sheet" style="width: 700px; font-size: 12px;">
+        <h2 style="text-align: center;">ENTREGA DE MOTOCICLETAS</h2>
+        <p style="text-align: right;">Cochabamba, ${escapeHtml(longPrintDate)}</p>
+        <p>Venta a: ${escapeHtml(sale.cliente_nombre || '_________________________')} [ ] Crédito [ ] Contado</p>
+        <fieldset style="margin-bottom: 15px;">
+            <legend><strong>DETALLE DE MOTOCICLETAS</strong></legend>
+            <table>
+              <thead>
+                <tr>
+                  <th>Marca</th>
+                  <th>Modelo</th>
+                  <th>N° Motor</th>
+                  <th>N° Chasis</th>
+                  <th>Color</th>
+                  <th>Cant.</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+        </fieldset>
+        <div style="border: 1px solid #000; padding: 10px; margin-bottom: 15px;">
+            <p><strong>OBSERVACIONES:</strong> EL TIEMPO DE GARANTÍA ES DE 1 AÑO O 12000 KM.</p>
+            <p><strong>IMPORTANTE:</strong> ES OBLIGATORIO REALIZAR EL PRIMER MANTENIMIENTO A LOS 300 KM EN UN TALLER AUTORIZADO.</p>
+        </div>
+        <table style="width: 100%; margin-top: 30px; text-align: left;">
+            <tr>
+                <td>Recibido por: ${escapeHtml(sale.cliente_nombre || '_________________')}</td>
+                <td>Entregado por: ${escapeHtml(usuario?.nombre || '________________')}</td>
+            </tr>
+            <tr>
+                <td>N° C.I.: ${escapeHtml(sale.cliente_ci_nit || '______________________')}</td>
+                <td>N° C.I.: ______________________</td>
+            </tr>
+        </table>
+        <p style="text-align: center; margin-top: 20px;"><i>"Las motocicletas se encuentran en perfectas condiciones de funcionamiento."</i></p>
+      </div>`
+    )
   }
 
   const tramitesTotal = () => {
@@ -251,6 +543,20 @@ export default function Ventas() {
       {!canOperate && (
         <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid var(--danger)', color: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
           Este vendedor no tiene punto de venta asignado. Un administrador debe asignarlo antes de registrar ventas.
+        </div>
+      )}
+
+      {lastSale?.id && (
+        <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-2)' }}>
+          <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
+            Última venta generada {lastSale.codigo ? `· ${lastSale.codigo}` : ''}
+          </div>
+          <div className="button-row" style={{ marginTop: 8 }}>
+            <button onClick={() => printSaleDocuments(lastSale.id)} style={S.btn}>Imprimir venta</button>
+            {isCentralSaleContext && (
+              <button onClick={() => printCentralMotoSaleNote(lastSale.id)} style={S.btn}>Imprimir nota motos</button>
+            )}
+          </div>
         </div>
       )}
 

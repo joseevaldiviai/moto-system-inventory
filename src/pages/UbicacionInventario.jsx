@@ -30,12 +30,14 @@ export default function UbicacionInventario() {
   ]
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
   const getModelLabel = (item) => item?.tipo || item?.ano || '-'
+  const getProductLabel = (item) => item?.producto || '-'
   const getSizeLabel = (item) => item?.talla || '-'
-  const getItemName = (item) => `${item?.marca || ''} ${getModelLabel(item)} ${getSizeLabel(item)}`.trim()
+  const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getModelLabel(item)} ${getSizeLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const buildGroupKey = (item) => ([
     normalizeGroupValue(item?.marca),
+    normalizeGroupValue(item?.producto),
     normalizeGroupValue(item?.tipo),
     normalizeGroupValue(item?.ano),
     normalizeGroupValue(isAccessoryRow(item) ? '' : item?.color),
@@ -187,9 +189,10 @@ export default function UbicacionInventario() {
               <thead>
                 <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                   <th style={{ padding: '6px 4px' }}>Marca</th>
-                  <th style={{ padding: '6px 4px' }}>Modelo</th>
-                  <th style={{ padding: '6px 4px' }}>Color</th>
-                  <th style={{ padding: '6px 4px' }}>Talla</th>
+                  {(tab === 'accesorios' || tab === 'repuestos') && <th style={{ padding: '6px 4px' }}>Producto</th>}
+                  <th style={{ padding: '6px 4px' }}>{tab === 'accesorios' ? 'Codigo' : tab === 'repuestos' ? 'Descripcion' : 'Modelo'}</th>
+                  {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
+                  {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Talla</th>}
                   <th style={{ padding: '6px 4px' }}>Stock</th>
                   <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
                 </tr>
@@ -198,9 +201,10 @@ export default function UbicacionInventario() {
                 {sortedItems.map((it) => (
                   <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                     <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                    {(tab === 'accesorios' || tab === 'repuestos') && <td style={{ padding: '6px 4px' }}>{getProductLabel(it)}</td>}
                     <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
-                    <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>
-                    <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>
+                    {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
+                    {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
                     <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                     <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
                   </tr>

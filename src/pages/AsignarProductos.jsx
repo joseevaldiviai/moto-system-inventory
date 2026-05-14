@@ -116,6 +116,7 @@ export default function AsignarProductos() {
   const buildProductLabel = (product) => {
     const parts = [
       product?.marca,
+      product?.producto,
       product?.tipo || product?.ano,
       product?.ano && product?.tipo ? product?.ano : null,
       product?.color,
@@ -130,6 +131,7 @@ export default function AsignarProductos() {
       <tr>
         <td>${it.producto_tipo ?? ''}</td>
         <td>${it.marca ?? ''}</td>
+        <td>${it.producto ?? ''}</td>
         <td>${it.tipo ?? ''}</td>
         <td>${it.ano ?? ''}</td>
         <td>${it.color ?? ''}</td>
@@ -169,7 +171,7 @@ export default function AsignarProductos() {
   <table>
     <thead>
       <tr>
-        <th>Tipo</th><th>Marca</th><th>Modelo/Tipo</th><th>Año</th><th>Color</th><th>Cilindrada</th>
+        <th>Tipo</th><th>Marca</th><th>Producto</th><th>Codigo/Descripcion</th><th>Año</th><th>Color</th><th>Cilindrada</th>
         <th style="text-align:right">Cantidad</th>
         <th style="text-align:right">Precio venta</th>
         <th style="text-align:right">Subtotal</th>
