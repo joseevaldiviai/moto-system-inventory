@@ -57,18 +57,30 @@ export default function UbicacionInventario() {
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const showSizeForTab = tab === 'accesorios'
+  const isMotoTab = tab === 'motos' || tab === 'motos_e'
   const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getModelLabel(item)} ${isAccessoryRow(item) ? getSizeLabel(item) : ''}`.trim()
-  const buildGroupKey = (item) => ([
-    normalizeGroupValue(item?.marca),
-    normalizeGroupValue(item?.producto),
-    normalizeGroupValue(item?.tipo),
-    normalizeGroupValue(item?.ano),
-    normalizeGroupValue(isAccessoryRow(item) ? '' : item?.color),
-    normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
-    normalizeGroupValue(item?.cilindrada),
-    normalizeGroupValue(item?.motor),
-    normalizeGroupValue(item?.costo ?? item?.precio),
-  ].join('||'))
+  const buildGroupKey = (item) => {
+    if (isMotoTab) {
+      return [
+        normalizeGroupValue(item?.marca),
+        normalizeGroupValue(item?.tipo),
+        normalizeGroupValue(item?.costo ?? item?.precio),
+        normalizeGroupValue(item?.cilindrada),
+        tab === 'motos_e' ? normalizeGroupValue(item?.potencia) : '',
+      ].join('||')
+    }
+    return [
+      normalizeGroupValue(item?.marca),
+      normalizeGroupValue(item?.producto),
+      normalizeGroupValue(item?.tipo),
+      normalizeGroupValue(item?.ano),
+      normalizeGroupValue(isAccessoryRow(item) ? '' : item?.color),
+      normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
+      normalizeGroupValue(item?.cilindrada),
+      normalizeGroupValue(item?.motor),
+      normalizeGroupValue(item?.costo ?? item?.precio),
+    ].join('||')
+  }
   const groupedItems = (() => {
     const grouped = new Map()
     for (const row of items) {
@@ -76,6 +88,7 @@ export default function UbicacionInventario() {
       const existing = grouped.get(key)
       if (existing) {
         if (existing.color !== row?.color) existing.color = 'Varios'
+        if (isMotoTab && existing.ano !== row?.ano) existing.ano = 'Varios'
         existing.cantidad_libre += Number(row?.cantidad_libre || 0)
         existing.cantidad_reservada += Number(row?.cantidad_reservada || 0)
         existing.cantidad_vendida += Number(row?.cantidad_vendida || 0)
@@ -242,9 +255,11 @@ export default function UbicacionInventario() {
           <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
             {detailedView ? 'Vista simple' : 'Vista detallada'}
           </button>
-          <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
-            Personalizar columnas
-          </button>
+          {detailedView && (
+            <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn}>
+              Personalizar columnas
+            </button>
+          )}
         </div>
         {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
           detailedView ? (

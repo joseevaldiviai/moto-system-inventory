@@ -1073,6 +1073,13 @@ async function handleAssignmentsCreate(request, env) {
   return json({ ok: true, data: { codigo } });
 }
 
+const ASSIGNMENT_DETAIL_SELECT = {
+  motos: 'id, marca, tipo, ano, color, cilindrada, costo, precio_venta, activo',
+  motos_e: 'id, marca, tipo, ano, color, potencia, costo, precio_venta, activo',
+  accesorios: 'id, marca, producto, tipo, color, precio, precio_final, activo',
+  repuestos: 'id, marca, producto, tipo, precio, precio_final, activo',
+};
+
 async function fetchAssignmentDetails(admin, asignacionId) {
   const { data: items, error: itemsError } = await admin
     .from('asignacion_inventario_items')
@@ -1093,11 +1100,13 @@ async function fetchAssignmentDetails(admin, asignacionId) {
   const productsByKind = new Map();
   for (const [kind, ids] of idsByKind.entries()) {
     if (!PRODUCT_TABLES.includes(kind)) continue;
+    const selectCols = ASSIGNMENT_DETAIL_SELECT[kind];
+    if (!selectCols) continue;
     const uniqueIds = [...new Set(ids)].filter(Boolean);
     if (!uniqueIds.length) continue;
     const { data: products, error } = await admin
       .from(kind)
-      .select('id, marca, producto, tipo, ano, color, cilindrada, precio_venta, precio_final, activo')
+      .select(selectCols)
       .in('id', uniqueIds);
     if (error) throw new Error(error.message);
     productsByKind.set(kind, new Map((products || []).map((p) => [Number(p.id), p])));
@@ -1127,6 +1136,7 @@ async function fetchAssignmentDetails(admin, asignacionId) {
       ano: product?.ano ?? null,
       color: product?.color ?? null,
       cilindrada: product?.cilindrada ?? null,
+      potencia: product?.potencia ?? null,
       precio_venta: Number.isFinite(precioVenta) ? precioVenta : 0,
       subtotal: Number.isFinite(subtotal) ? subtotal : 0,
       activo: product?.activo ?? null,

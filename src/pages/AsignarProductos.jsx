@@ -567,9 +567,11 @@ export default function AsignarProductos() {
             <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
               {detailedView ? 'Vista simple' : 'Vista detallada'}
             </button>
-            <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
-              Personalizar columnas
-            </button>
+            {detailedView && (
+              <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn}>
+                Personalizar columnas
+              </button>
+            )}
           </div>
           {!originPoint ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona un origen para buscar stock.</div>

@@ -70,18 +70,31 @@ export default function Inventario() {
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const isSparePartRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && !Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const showSizeForTab = tab === 'accesorios'
-  const buildGroupKey = (item, includeWarehouse = false) => ([
-    normalizeGroupValue(item?.marca),
-    normalizeGroupValue(item?.producto),
-    normalizeGroupValue(item?.tipo),
-    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
-    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
-    normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
-    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.cilindrada),
-    normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.motor),
-    normalizeGroupValue(item?.costo ?? item?.precio),
-    includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
-  ].join('||'))
+  const isMotoTab = tab === 'motos' || tab === 'motos_e'
+  const buildGroupKey = (item, includeWarehouse = false) => {
+    if (isMotoTab) {
+      return [
+        normalizeGroupValue(item?.marca),
+        normalizeGroupValue(item?.tipo),
+        normalizeGroupValue(item?.costo ?? item?.precio),
+        normalizeGroupValue(item?.cilindrada),
+        tab === 'motos_e' ? normalizeGroupValue(item?.potencia) : '',
+        includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
+      ].join('||')
+    }
+    return [
+      normalizeGroupValue(item?.marca),
+      normalizeGroupValue(item?.producto),
+      normalizeGroupValue(item?.tipo),
+      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
+      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
+      normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
+      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.cilindrada),
+      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.motor),
+      normalizeGroupValue(item?.costo ?? item?.precio),
+      includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
+    ].join('||')
+  }
   const groupInventoryRows = (rows, includeWarehouse = false) => {
     const grouped = new Map()
     for (const row of rows) {
@@ -89,6 +102,7 @@ export default function Inventario() {
       const existing = grouped.get(key)
       if (existing) {
         if (existing.color !== row?.color) existing.color = 'Varios'
+        if (isMotoTab && existing.ano !== row?.ano) existing.ano = 'Varios'
         existing.cantidad_libre += Number(row?.cantidad_libre || 0)
         existing.cantidad_reservada += Number(row?.cantidad_reservada || 0)
         existing.cantidad_vendida += Number(row?.cantidad_vendida || 0)
@@ -598,9 +612,11 @@ export default function Inventario() {
               <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
                 {detailedView ? 'Vista simple' : 'Vista detallada'}
               </button>
-              <button type="button" onClick={() => setMainColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
-                Personalizar columnas
-              </button>
+              {detailedView && (
+                <button type="button" onClick={() => setMainColumnPickerOpen(true)} style={S.btn}>
+                  Personalizar columnas
+                </button>
+              )}
             </div>
           )}
           {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
@@ -708,7 +724,7 @@ export default function Inventario() {
                   <div className="grid-two-tight">
                     {fieldsByTab[tab].map(([key, label, type]) => (
                       <div key={key}>
-                        <div style={S.label}>{label}</div>
+                        <div style={S.label}>{label}{key === 'cilindrada' ? ' (expresado en Cc.)' : ''}</div>
                         {type === 'marca' ? (
                           <select
                             style={S.input}
@@ -727,10 +743,16 @@ export default function Inventario() {
                         ) : (
                           <input
                             style={S.input}
+                            inputMode={key === 'cilindrada' ? 'numeric' : undefined}
+                            pattern={key === 'cilindrada' ? '[0-9]*' : undefined}
                             value={form[key] ?? ''}
                             onChange={e => setForm(f => ({
                               ...f,
-                              [key]: key === 'color' ? e.target.value.toLocaleUpperCase('es') : e.target.value,
+                              [key]: key === 'color'
+                                ? e.target.value.toLocaleUpperCase('es')
+                                : key === 'cilindrada'
+                                  ? e.target.value.replace(/\D/g, '')
+                                  : e.target.value,
                             }))}
                           />
                         )}
@@ -776,9 +798,11 @@ export default function Inventario() {
                   <button type="button" onClick={() => setPointDetailedView((value) => !value)} style={S.btn}>
                     {pointDetailedView ? 'Vista simple' : 'Vista detallada'}
                   </button>
-                  <button type="button" onClick={() => setPointColumnPickerOpen(true)} style={S.btn} disabled={!pointDetailedView}>
-                    Personalizar columnas
-                  </button>
+                  {pointDetailedView && (
+                    <button type="button" onClick={() => setPointColumnPickerOpen(true)} style={S.btn}>
+                      Personalizar columnas
+                    </button>
+                  )}
                 </div>
                 {!selectedPointId ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona una ubicacion para revisar el stock.</div>
