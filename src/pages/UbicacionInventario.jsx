@@ -3,6 +3,25 @@ import { useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 import useAuthStore from '../store/authStore'
+import ProductGridTable from '../components/ProductGridTable'
+import ColumnPickerModal from '../components/ColumnPickerModal'
+import { getProductGridColumns } from '../lib/productGridColumns'
+
+const LOCATION_GRID_PREFS_KEY = 'inventory:location-grid:detail-columns'
+
+const loadGridPrefs = () => {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(LOCATION_GRID_PREFS_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const saveGridPrefs = (value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(LOCATION_GRID_PREFS_KEY, JSON.stringify(value))
+}
 
 export default function UbicacionInventario() {
   const { pointId } = useParams()
@@ -15,6 +34,9 @@ export default function UbicacionInventario() {
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState('name')
   const [sortDirection, setSortDirection] = useState('asc')
+  const [detailedView, setDetailedView] = useState(false)
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false)
+  const [detailColumnsByTab, setDetailColumnsByTab] = useState(() => loadGridPrefs())
 
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
@@ -32,16 +54,17 @@ export default function UbicacionInventario() {
   const getModelLabel = (item) => item?.tipo || item?.ano || '-'
   const getProductLabel = (item) => item?.producto || '-'
   const getSizeLabel = (item) => item?.talla || '-'
-  const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getModelLabel(item)} ${getSizeLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
+  const showSizeForTab = tab === 'accesorios'
+  const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getModelLabel(item)} ${isAccessoryRow(item) ? getSizeLabel(item) : ''}`.trim()
   const buildGroupKey = (item) => ([
     normalizeGroupValue(item?.marca),
     normalizeGroupValue(item?.producto),
     normalizeGroupValue(item?.tipo),
     normalizeGroupValue(item?.ano),
     normalizeGroupValue(isAccessoryRow(item) ? '' : item?.color),
-    normalizeGroupValue(item?.talla),
+    normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
     normalizeGroupValue(item?.cilindrada),
     normalizeGroupValue(item?.motor),
     normalizeGroupValue(item?.costo ?? item?.precio),
@@ -89,6 +112,13 @@ export default function UbicacionInventario() {
     acc.dinero += qty * price
     return acc
   }, { unidades: 0, dinero: 0 })
+  const gridColumns = getProductGridColumns(tab, { formatBs, includeWarehouse: false })
+  const defaultDetailColumnIds = gridColumns.map((column) => column.id)
+  const activeDetailColumnIds = (
+    detailColumnsByTab[tab]?.filter((id) => defaultDetailColumnIds.includes(id))?.length
+      ? defaultDetailColumnIds.filter((id) => detailColumnsByTab[tab].includes(id))
+      : defaultDetailColumnIds
+  )
 
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
@@ -128,6 +158,33 @@ export default function UbicacionInventario() {
 
   return (
     <div className="page-shell" style={S.page}>
+      <ColumnPickerModal
+        open={columnPickerOpen}
+        title={`Columnas de ${tabs.find((item) => item.id === tab)?.label || 'productos'}`}
+        columns={gridColumns}
+        selectedIds={activeDetailColumnIds}
+        onToggle={(columnId) => {
+          const currentIds = activeDetailColumnIds
+          const nextSelected = currentIds.includes(columnId)
+            ? currentIds.filter((id) => id !== columnId)
+            : [...currentIds, columnId]
+          if (!nextSelected.length) return
+          const ordered = defaultDetailColumnIds.filter((id) => nextSelected.includes(id))
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: ordered }
+            saveGridPrefs(next)
+            return next
+          })
+        }}
+        onSelectAll={() => {
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: defaultDetailColumnIds }
+            saveGridPrefs(next)
+            return next
+          })
+        }}
+        onClose={() => setColumnPickerOpen(false)}
+      />
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>UBICACION</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>
@@ -165,7 +222,7 @@ export default function UbicacionInventario() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+        <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 8, alignItems: 'end' }}>
           <div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>Ordenar por</div>
             <select style={S.input} value={sortField} onChange={(e) => setSortField(e.target.value)}>
@@ -182,36 +239,51 @@ export default function UbicacionInventario() {
           >
             {sortDirection === 'asc' ? '↑' : '↓'}
           </button>
+          <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
+            {detailedView ? 'Vista simple' : 'Vista detallada'}
+          </button>
+          <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
+            Personalizar columnas
+          </button>
         </div>
         {loading ? <div style={{ color: 'var(--text-muted)' }}>Cargando...</div> : (
-          <div className="table-wrap list-scroll">
-            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
-                  <th style={{ padding: '6px 4px' }}>Marca</th>
-                  {(tab === 'accesorios' || tab === 'repuestos') && <th style={{ padding: '6px 4px' }}>Producto</th>}
-                  <th style={{ padding: '6px 4px' }}>{tab === 'accesorios' ? 'Codigo' : tab === 'repuestos' ? 'Descripcion' : 'Modelo'}</th>
-                  {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
-                  {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Talla</th>}
-                  <th style={{ padding: '6px 4px' }}>Stock</th>
-                  <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedItems.map((it) => (
-                  <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
-                    <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
-                    {(tab === 'accesorios' || tab === 'repuestos') && <td style={{ padding: '6px 4px' }}>{getProductLabel(it)}</td>}
-                    <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
-                    {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
-                    {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
-                    <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
-                    <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
+          detailedView ? (
+            <ProductGridTable
+              columns={gridColumns}
+              visibleColumnIds={activeDetailColumnIds}
+              rows={sortedItems}
+              emptyText="Sin resultados."
+            />
+          ) : (
+            <div className="table-wrap list-scroll">
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 4px' }}>Marca</th>
+                    {(tab === 'accesorios' || tab === 'repuestos') && <th style={{ padding: '6px 4px' }}>Producto</th>}
+                    <th style={{ padding: '6px 4px' }}>{tab === 'accesorios' ? 'Codigo' : tab === 'repuestos' ? 'Descripcion' : 'Modelo'}</th>
+                    {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
+                    {showSizeForTab && <th style={{ padding: '6px 4px' }}>Talla</th>}
+                    <th style={{ padding: '6px 4px' }}>Stock</th>
+                    <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {sortedItems.map((it) => (
+                    <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
+                      <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
+                      {(tab === 'accesorios' || tab === 'repuestos') && <td style={{ padding: '6px 4px' }}>{getProductLabel(it)}</td>}
+                      <td style={{ padding: '6px 4px' }}>{getModelLabel(it)}</td>
+                      {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
+                      {showSizeForTab && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
+                      <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
+                      <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
 
         <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-soft)', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import useAuthStore from '../store/authStore'
 import { api } from '../lib/apiClient'
+import ProductGridTable from '../components/ProductGridTable'
+import ColumnPickerModal from '../components/ColumnPickerModal'
+import { getProductGridColumns } from '../lib/productGridColumns'
 
 const PRODUCT_TABS = [
   { id: 'motos', label: 'Motos' },
@@ -10,6 +13,22 @@ const PRODUCT_TABS = [
   { id: 'repuestos', label: 'Repuestos' },
 ]
 
+const ASSIGNMENT_GRID_PREFS_KEY = 'assignment:grid:detail-columns'
+
+const loadGridPrefs = () => {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(ASSIGNMENT_GRID_PREFS_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const saveGridPrefs = (value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(ASSIGNMENT_GRID_PREFS_KEY, JSON.stringify(value))
+}
+
 export default function AsignarProductos() {
   const { token, usuario, esSupervisor } = useAuthStore()
   const [puntos, setPuntos] = useState([])
@@ -17,6 +36,9 @@ export default function AsignarProductos() {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
+  const [detailedView, setDetailedView] = useState(false)
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false)
+  const [detailColumnsByTab, setDetailColumnsByTab] = useState(() => loadGridPrefs())
   const [tickets, setTickets] = useState([])
   const [ticketsLoading, setTicketsLoading] = useState(false)
 
@@ -112,6 +134,20 @@ export default function AsignarProductos() {
   }
 
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const resultGridColumns = getProductGridColumns(tab, {
+    formatBs,
+    includeWarehouse: false,
+    renderAction: (row) => (
+      <button type="button" onClick={() => addItem(row)} style={S.btn} disabled={Number(row?.cantidad_libre || 0) <= 0}>
+        Agregar
+      </button>
+    ),
+  })
+  const defaultDetailColumnIds = resultGridColumns.map((column) => column.id)
+  const storedDetailColumnIds = detailColumnsByTab[tab]?.filter((id) => defaultDetailColumnIds.includes(id)) || []
+  const activeDetailColumnIds = storedDetailColumnIds.length
+    ? defaultDetailColumnIds.filter((id) => storedDetailColumnIds.includes(id) || id === 'acciones')
+    : defaultDetailColumnIds
 
   const buildProductLabel = (product) => {
     const parts = [
@@ -265,6 +301,33 @@ export default function AsignarProductos() {
 
   return (
     <div className="page-shell" style={S.page}>
+      <ColumnPickerModal
+        open={columnPickerOpen}
+        title={`Columnas de ${PRODUCT_TABS.find((item) => item.id === tab)?.label || 'productos'}`}
+        columns={resultGridColumns.filter((column) => column.id !== 'acciones')}
+        selectedIds={activeDetailColumnIds.filter((id) => id !== 'acciones')}
+        onToggle={(columnId) => {
+          const currentIds = activeDetailColumnIds.filter((id) => id !== 'acciones')
+          const nextSelected = currentIds.includes(columnId)
+            ? currentIds.filter((id) => id !== columnId)
+            : [...currentIds, columnId]
+          if (!nextSelected.length) return
+          const ordered = defaultDetailColumnIds.filter((id) => nextSelected.includes(id) || id === 'acciones')
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: ordered }
+            saveGridPrefs(next)
+            return next
+          })
+        }}
+        onSelectAll={() => {
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: defaultDetailColumnIds }
+            saveGridPrefs(next)
+            return next
+          })
+        }}
+        onClose={() => setColumnPickerOpen(false)}
+      />
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>ASIGNAR PRODUCTOS</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Consolidación</h1>
@@ -500,10 +563,25 @@ export default function AsignarProductos() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <div className="button-row" style={{ marginBottom: 12 }}>
+            <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
+              {detailedView ? 'Vista simple' : 'Vista detallada'}
+            </button>
+            <button type="button" onClick={() => setColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
+              Personalizar columnas
+            </button>
+          </div>
           {!originPoint ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona un origen para buscar stock.</div>
           ) : loading ? (
             <div style={{ color: 'var(--text-muted)' }}>Cargando...</div>
+          ) : detailedView ? (
+            <ProductGridTable
+              columns={resultGridColumns}
+              visibleColumnIds={activeDetailColumnIds}
+              rows={results || []}
+              emptyText="Sin resultados."
+            />
           ) : (
             <div className="list-scroll" style={{ maxHeight: 520 }}>
               {(results || []).map((p) => (

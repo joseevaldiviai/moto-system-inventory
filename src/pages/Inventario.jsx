@@ -2,6 +2,26 @@ import { useEffect, useState } from 'react'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
+import ProductGridTable from '../components/ProductGridTable'
+import ColumnPickerModal from '../components/ColumnPickerModal'
+import { getProductGridColumns } from '../lib/productGridColumns'
+
+const INVENTORY_GRID_PREFS_KEY = 'inventory:grid:detail-columns'
+const INVENTORY_POINT_GRID_PREFS_KEY = 'inventory:point-grid:detail-columns'
+
+const loadGridPrefs = (key) => {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(key) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+const saveGridPrefs = (key, value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
 
 export default function Inventario() {
   const { token, esSupervisor, usuario } = useAuthStore()
@@ -18,6 +38,12 @@ export default function Inventario() {
   const [sortDirection, setSortDirection] = useState('asc')
   const [pointSortField, setPointSortField] = useState('name')
   const [pointSortDirection, setPointSortDirection] = useState('asc')
+  const [detailedView, setDetailedView] = useState(false)
+  const [pointDetailedView, setPointDetailedView] = useState(false)
+  const [mainColumnPickerOpen, setMainColumnPickerOpen] = useState(false)
+  const [pointColumnPickerOpen, setPointColumnPickerOpen] = useState(false)
+  const [detailColumnsByTab, setDetailColumnsByTab] = useState(() => loadGridPrefs(INVENTORY_GRID_PREFS_KEY))
+  const [pointDetailColumnsByTab, setPointDetailColumnsByTab] = useState(() => loadGridPrefs(INVENTORY_POINT_GRID_PREFS_KEY))
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
   const [form, setForm] = useState({})
@@ -43,13 +69,14 @@ export default function Inventario() {
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
   const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const isSparePartRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && !Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
+  const showSizeForTab = tab === 'accesorios'
   const buildGroupKey = (item, includeWarehouse = false) => ([
     normalizeGroupValue(item?.marca),
     normalizeGroupValue(item?.producto),
     normalizeGroupValue(item?.tipo),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
-    normalizeGroupValue(isAccessoryRow(item) ? '' : item?.talla),
+    normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.cilindrada),
     normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.motor),
     normalizeGroupValue(item?.costo ?? item?.precio),
@@ -354,6 +381,20 @@ export default function Inventario() {
   const groupedPointItems = groupInventoryRows(pointItems, false)
   const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedDisplayedItems, sortField, sortDirection)
   const sortedPointItems = sortInventoryRows(groupedPointItems, pointSortField, pointSortDirection)
+  const inventoryColumns = tab === 'marcas' ? [] : getProductGridColumns(tab, { formatBs, getWarehouseLabel, includeWarehouse: true })
+  const pointInventoryColumns = tab === 'marcas' ? [] : getProductGridColumns(tab, { formatBs, includeWarehouse: false })
+  const defaultDetailColumnIds = inventoryColumns.map((column) => column.id)
+  const defaultPointDetailColumnIds = pointInventoryColumns.map((column) => column.id)
+  const activeDetailColumnIds = (
+    detailColumnsByTab[tab]?.filter((id) => defaultDetailColumnIds.includes(id))?.length
+      ? defaultDetailColumnIds.filter((id) => detailColumnsByTab[tab].includes(id))
+      : defaultDetailColumnIds
+  )
+  const activePointDetailColumnIds = (
+    pointDetailColumnsByTab[tab]?.filter((id) => defaultPointDetailColumnIds.includes(id))?.length
+      ? defaultPointDetailColumnIds.filter((id) => pointDetailColumnsByTab[tab].includes(id))
+      : defaultPointDetailColumnIds
+  )
   const listTotals = tab === 'marcas'
     ? { unidades: 0, dinero: 0 }
     : sortedDisplayedItems.reduce((acc, row) => {
@@ -366,6 +407,60 @@ export default function Inventario() {
 
   return (
     <div className="page-shell" style={S.page}>
+      <ColumnPickerModal
+        open={mainColumnPickerOpen && tab !== 'marcas'}
+        title={`Columnas de ${tabs.find((item) => item.id === tab)?.label || 'productos'}`}
+        columns={inventoryColumns}
+        selectedIds={activeDetailColumnIds}
+        onToggle={(columnId) => {
+          const currentIds = activeDetailColumnIds
+          const nextSelected = currentIds.includes(columnId)
+            ? currentIds.filter((id) => id !== columnId)
+            : [...currentIds, columnId]
+          if (!nextSelected.length) return
+          const ordered = defaultDetailColumnIds.filter((id) => nextSelected.includes(id))
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: ordered }
+            saveGridPrefs(INVENTORY_GRID_PREFS_KEY, next)
+            return next
+          })
+        }}
+        onSelectAll={() => {
+          setDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: defaultDetailColumnIds }
+            saveGridPrefs(INVENTORY_GRID_PREFS_KEY, next)
+            return next
+          })
+        }}
+        onClose={() => setMainColumnPickerOpen(false)}
+      />
+      <ColumnPickerModal
+        open={pointColumnPickerOpen && tab !== 'marcas'}
+        title={`Columnas por ubicación de ${tabs.find((item) => item.id === tab)?.label || 'productos'}`}
+        columns={pointInventoryColumns}
+        selectedIds={activePointDetailColumnIds}
+        onToggle={(columnId) => {
+          const currentIds = activePointDetailColumnIds
+          const nextSelected = currentIds.includes(columnId)
+            ? currentIds.filter((id) => id !== columnId)
+            : [...currentIds, columnId]
+          if (!nextSelected.length) return
+          const ordered = defaultPointDetailColumnIds.filter((id) => nextSelected.includes(id))
+          setPointDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: ordered }
+            saveGridPrefs(INVENTORY_POINT_GRID_PREFS_KEY, next)
+            return next
+          })
+        }}
+        onSelectAll={() => {
+          setPointDetailColumnsByTab((prev) => {
+            const next = { ...prev, [tab]: defaultPointDetailColumnIds }
+            saveGridPrefs(INVENTORY_POINT_GRID_PREFS_KEY, next)
+            return next
+          })
+        }}
+        onClose={() => setPointColumnPickerOpen(false)}
+      />
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>INVENTARIO</div>
         <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Productos</h1>
@@ -483,7 +578,7 @@ export default function Inventario() {
             />
           </div>
           {tab !== 'marcas' && (
-            <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+            <div style={{ marginBottom: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 8, alignItems: 'end' }}>
               <div>
                 <div style={S.label}>Ordenar por</div>
                 <select style={S.input} value={sortField} onChange={e => setSortField(e.target.value)}>
@@ -499,6 +594,12 @@ export default function Inventario() {
                 title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
               >
                 {sortDirection === 'asc' ? '↑' : '↓'}
+              </button>
+              <button type="button" onClick={() => setDetailedView((value) => !value)} style={S.btn}>
+                {detailedView ? 'Vista simple' : 'Vista detallada'}
+              </button>
+              <button type="button" onClick={() => setMainColumnPickerOpen(true)} style={S.btn} disabled={!detailedView}>
+                Personalizar columnas
               </button>
             </div>
           )}
@@ -523,6 +624,13 @@ export default function Inventario() {
                     ))}
                   </tbody>
                 </table>
+              ) : detailedView ? (
+                <ProductGridTable
+                  columns={inventoryColumns}
+                  visibleColumnIds={activeDetailColumnIds}
+                  rows={sortedDisplayedItems}
+                  emptyText="Sin resultados."
+                />
               ) : (
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                   <thead>
@@ -534,7 +642,7 @@ export default function Inventario() {
                       </th>
                       {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Año</th>}
                       {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
-                      {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Talla</th>}
+                      {showSizeForTab && <th style={{ padding: '6px 4px' }}>Talla</th>}
                       {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Cilindrada</th>}
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
@@ -550,7 +658,7 @@ export default function Inventario() {
                         <td style={{ padding: '6px 4px' }}>{getPrimaryLabel(it)}</td>
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>}
                         {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
-                        {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
+                        {showSizeForTab && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>}
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
@@ -648,7 +756,7 @@ export default function Inventario() {
                     ))}
                   </select>
                 </div>
-                <div style={{ marginBottom: 10, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 8, alignItems: 'end' }}>
+                <div style={{ marginBottom: 10, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto auto', gap: 8, alignItems: 'end' }}>
                   <div>
                     <div style={S.label}>Ordenar por</div>
                     <select style={S.input} value={pointSortField} onChange={e => setPointSortField(e.target.value)}>
@@ -665,11 +773,24 @@ export default function Inventario() {
                   >
                     {pointSortDirection === 'asc' ? '↑' : '↓'}
                   </button>
+                  <button type="button" onClick={() => setPointDetailedView((value) => !value)} style={S.btn}>
+                    {pointDetailedView ? 'Vista simple' : 'Vista detallada'}
+                  </button>
+                  <button type="button" onClick={() => setPointColumnPickerOpen(true)} style={S.btn} disabled={!pointDetailedView}>
+                    Personalizar columnas
+                  </button>
                 </div>
                 {!selectedPointId ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Selecciona una ubicacion para revisar el stock.</div>
                 ) : pointItems.length === 0 ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>Sin stock asignado en esta categoría.</div>
+                ) : pointDetailedView ? (
+                  <ProductGridTable
+                    columns={pointInventoryColumns}
+                    visibleColumnIds={activePointDetailColumnIds}
+                    rows={sortedPointItems}
+                    emptyText="Sin stock asignado en esta categoría."
+                  />
                 ) : (
                   <div className="list-scroll" style={{ maxHeight: 240 }}>
                     {sortedPointItems.map((item) => (
@@ -680,7 +801,7 @@ export default function Inventario() {
                             tab === 'accesorios' || tab === 'repuestos' ? getProductLabel(item) : null,
                             getPrimaryLabel(item),
                             tab !== 'repuestos' ? (item.color || '-') : null,
-                            tab !== 'repuestos' ? getSizeLabel(item) : null,
+                            showSizeForTab ? getSizeLabel(item) : null,
                           ].filter(Boolean).join(' · ')}
                         </div>
                         <div style={{ color: 'var(--text-soft)' }}>
