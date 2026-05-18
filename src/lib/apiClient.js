@@ -323,7 +323,12 @@ export const api = {
   cancelarProforma: ({ token, id }) => request(`/quotes/${id}/cancel`, { method: 'POST', token }),
   exportarProformaArchivo: ({ token, id }) => safeDownload(`/exports/quotes/${id}`, { token, filename: `proforma-${id}.html` }),
 
-  listarVentas: ({ token }) => request('/sales', { token }),
+  listarVentas: ({ token, puntoVentaId } = {}) => {
+    const query = new URLSearchParams();
+    if (puntoVentaId) query.set('punto_venta_id', puntoVentaId);
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/sales${suffix}`, { token });
+  },
   obtenerVenta: ({ token, id }) => request(`/sales/${id}`, { token }),
   crearVenta: ({ token, data }) => request('/sales', { method: 'POST', token, body: { data } }),
   anularVenta: ({ token, id }) => request(`/sales/${id}/cancel`, { method: 'POST', token }),

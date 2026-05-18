@@ -1255,8 +1255,16 @@ async function handleAssignmentsList(request, env) {
   });
 }
 
+function canApplyAssignment(profile, asignacion) {
+  if (profile.rol === 'SUPERVISOR') return false;
+  return (
+    profile.punto_venta_id != null
+    && Number(profile.punto_venta_id) === Number(asignacion.destino_punto_venta_id)
+  );
+}
+
 async function handleAssignmentsApply(request, env, code) {
-  const { admin } = await requireSupervisor(request, env);
+  const { admin, profile } = await requireAuth(request, env);
   const codigo = decodeURIComponent(code || '').trim();
   if (!codigo) return fail('Codigo requerido');
 
@@ -1266,6 +1274,9 @@ async function handleAssignmentsApply(request, env, code) {
     .eq('codigo', codigo)
     .single();
   if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
+  if (!canApplyAssignment(profile, asignacion)) {
+    return fail('No autorizado para aplicar esta asignacion', 403);
+  }
   if (asignacion.estado !== 'PENDIENTE') return fail('La asignacion ya fue aplicada o anulada');
 
   const { data: items, error: itemsError } = await admin
@@ -1276,16 +1287,21 @@ async function handleAssignmentsApply(request, env, code) {
   if (itemsError) return fail(itemsError.message, 500);
   if (!items?.length) return fail('Asignacion sin items', 400);
 
-  // Aplicacion secuencial; si hay error se detiene y no se marca como aplicada.
-  for (const item of items) {
-    await transferInventoryStock({
-      admin,
-      kind: item.producto_tipo,
-      productId: item.producto_id,
-      sourcePointId: asignacion.origen_punto_venta_id,
-      destinationPointId: asignacion.destino_punto_venta_id,
-      quantity: item.cantidad,
-    });
+  try {
+    for (const item of items) {
+      await transferInventoryStock({
+        admin,
+        kind: item.producto_tipo,
+        productId: item.producto_id,
+        sourcePointId: asignacion.origen_punto_venta_id,
+        destinationPointId: asignacion.destino_punto_venta_id,
+        quantity: item.cantidad,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes('no encontrado') ? 404 : 400;
+    return fail(message, status);
   }
 
   const { error: updateError } = await admin
@@ -1707,42 +1723,72 @@ async function handleQuotesCancel(request, env, id) {
 
 async function handleSalesList(request, env) {
   const { admin, profile } = await requireAuth(request, env);
+  const url = new URL(request.url);
+  const requestedPointId = url.searchParams.get('punto_venta_id');
+
   let query = admin
     .from('ventas')
     .select('id, codigo, proforma_id, vendedor_id, punto_venta_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
     .order('fecha_venta', { ascending: false });
-  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
-  const { data, error } = await query;
 
+  if (profile.rol === 'SUPERVISOR') {
+    if (requestedPointId) {
+      const pointId = Number(requestedPointId);
+      if (!Number.isFinite(pointId) || pointId <= 0) return fail('punto_venta_id invalido');
+      query = query.eq('punto_venta_id', pointId);
+    }
+  } else {
+    if (!profile.punto_venta_id) return json({ ok: true, data: [] });
+    query = query.eq('punto_venta_id', profile.punto_venta_id);
+  }
+
+  const { data, error } = await query;
   if (error) return fail(error.message, 500);
+
   const pointIds = [...new Set((data || []).map((row) => row.punto_venta_id).filter(Boolean))];
   const pointsMap = new Map();
   if (pointIds.length) {
-    const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre').in('id', pointIds);
+    const { data: points, error: pointsError } = await admin
+      .from('puntos_venta')
+      .select('id, nombre, tipo')
+      .in('id', pointIds);
     if (pointsError) return fail(pointsError.message, 500);
-    for (const point of points || []) pointsMap.set(Number(point.id), point.nombre);
+    for (const point of points || []) {
+      pointsMap.set(Number(point.id), point);
+    }
   }
+
   return json({
     ok: true,
-    data: (data || []).map((row) => ({
-      ...row,
-      vendedor_nombre: row.user_profiles?.nombre ?? null,
-      punto_venta_nombre: row.punto_venta_id ? (pointsMap.get(Number(row.punto_venta_id)) || null) : null,
-      user_profiles: undefined,
-    })),
+    data: (data || []).map((row) => {
+      const point = row.punto_venta_id ? pointsMap.get(Number(row.punto_venta_id)) : null;
+      return {
+        ...row,
+        vendedor_nombre: row.user_profiles?.nombre ?? null,
+        punto_venta_nombre: point?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (point?.nombre ?? null),
+        punto_venta_tipo: point?.tipo ?? null,
+        user_profiles: undefined,
+      };
+    }),
   });
 }
 
 async function handleSalesGet(request, env, id) {
   const { admin, profile } = await requireAuth(request, env);
-  let query = admin
+  const { data: venta, error: ventaError } = await admin
     .from('ventas')
     .select('id, codigo, proforma_id, vendedor_id, punto_venta_id, cliente_nombre, cliente_ci_nit, cliente_celular, subtotal, total_descuentos, total, estado, notas, fecha_venta, user_profiles!ventas_vendedor_id_fkey(nombre)')
-    .eq('id', id);
-  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
-  const { data: venta, error: ventaError } = await query.single();
+    .eq('id', id)
+    .single();
 
   if (ventaError || !venta) return fail('Venta no encontrada', 404);
+
+  if (
+    profile.rol !== 'SUPERVISOR'
+    && Number(profile.punto_venta_id) !== Number(venta.punto_venta_id)
+  ) {
+    return fail('No autorizado para ver esta venta', 403);
+  }
 
   const { data: items, error: itemsError } = await admin
     .from('venta_items')
@@ -1812,12 +1858,15 @@ async function handleSalesGet(request, env, id) {
     .in('venta_item_id', (items || []).map((item) => item.id));
   if (tramitesError) return fail(tramitesError.message, 500);
 
+  const salePoint = venta.punto_venta_id ? await getPointById(admin, venta.punto_venta_id) : null;
+
   return json({
     ok: true,
     data: {
       ...venta,
       vendedor_nombre: venta.user_profiles?.nombre ?? null,
-      punto_venta_nombre: venta.punto_venta_id ? (await getPointById(admin, venta.punto_venta_id)).nombre : null,
+      punto_venta_nombre: salePoint?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (salePoint?.nombre ?? null),
+      punto_venta_tipo: salePoint?.tipo ?? null,
       user_profiles: undefined,
       items: enrichedItems,
       tramites: tramites || [],

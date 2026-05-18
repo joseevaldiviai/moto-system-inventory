@@ -290,7 +290,7 @@ export default function AsignarProductos() {
     })
     if (!res?.ok) return toast.error(res?.error || 'No se pudo crear la asignación')
     setLastCode(res.data.codigo)
-    toast.success(`Asignación creada: ${res.data.codigo}`)
+    toast.success(`Asignación creada: ${res.data.codigo}. En Inventario usa "Validar y aplicar" para mover el stock al punto de venta.`)
     setForm((f) => ({ ...f, items: [] }))
     if (!isSup) setAuthPassword('')
     loadTickets()

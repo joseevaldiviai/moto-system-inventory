@@ -288,6 +288,19 @@ export default function Inventario() {
     toast.success('Costos actualizados')
   }
 
+  const isDestinationVendor = !isSup && !!usuario?.punto_venta_id
+
+  const canApplyToDestination = (assignment) => {
+    if (!assignment || !isDestinationVendor) return false
+    return Number(usuario.punto_venta_id) === Number(assignment.destino_punto_venta_id)
+  }
+
+  const applyAssignmentByCode = async (code) => {
+    const res = await api.aplicarAsignacionProductos({ token, codigo: code })
+    if (!res?.ok) throw new Error(res?.error || 'No se pudo aplicar la asignación')
+    return res
+  }
+
   const fetchAssignment = async () => {
     const code = assignmentCode.trim()
     if (!code) return toast.error('Ingresa un código')
@@ -298,7 +311,28 @@ export default function Inventario() {
         setAssignmentInfo(null)
         return toast.error(res?.error || 'Código inválido')
       }
-      setAssignmentInfo(res.data)
+
+      const assignment = res.data
+      setAssignmentInfo(assignment)
+
+      if (assignment.estado === 'PENDIENTE' && canApplyToDestination(assignment)) {
+        await applyAssignmentByCode(code)
+        setAssignmentInfo({ ...assignment, estado: 'APLICADA', aplicado_en: new Date().toISOString() })
+        toast.success('Asignación validada y stock transferido al punto de venta')
+        setAssignmentCode('')
+        load()
+        return
+      }
+
+      if (assignment.estado === 'PENDIENTE') {
+        toast.success(
+          isSup
+            ? 'Código válido. El vendedor del punto destino debe aplicar la asignación para mover el stock.'
+            : 'Código válido. Esta asignación es para otro punto de venta; no puedes aplicarla aquí.',
+        )
+        return
+      }
+
       toast.success('Código válido')
     } catch (e) {
       setAssignmentInfo(null)
@@ -311,11 +345,14 @@ export default function Inventario() {
   const applyAssignment = async () => {
     const code = assignmentCode.trim()
     if (!code) return toast.error('Ingresa un código')
+    if (!assignmentInfo) return toast.error('Valida el código primero')
+    if (!canApplyToDestination(assignmentInfo)) {
+      return toast.error('No tienes permiso para aplicar esta asignación')
+    }
     setAssignmentLoading(true)
     try {
-      const res = await api.aplicarAsignacionProductos({ token, codigo: code })
-      if (!res?.ok) return toast.error(res?.error || 'No se pudo aplicar')
-      toast.success('Asignación aplicada')
+      await applyAssignmentByCode(code)
+      toast.success('Asignación aplicada al punto de venta')
       setAssignmentInfo(null)
       setAssignmentCode('')
       load()
@@ -513,6 +550,11 @@ export default function Inventario() {
               <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 }}>
                 Código de asignación de productos
               </div>
+              <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--text-soft)' }}>
+                {isDestinationVendor
+                  ? 'Validar confirma el código y transfiere el stock a tu punto de venta cuando la asignación está pendiente.'
+                  : 'Validar revisa el código. Solo el vendedor del punto destino puede aplicar la asignación y recibir el stock.'}
+              </div>
               <div className="button-row" style={{ gap: 8, alignItems: 'end' }}>
                 <div style={{ flex: 1, minWidth: 220 }}>
                   <input
@@ -524,15 +566,15 @@ export default function Inventario() {
                   />
                 </div>
                 <button type="button" onClick={fetchAssignment} style={S.btn} disabled={assignmentLoading}>
-                  Validar
+                  {isDestinationVendor ? 'Validar y aplicar' : 'Validar'}
                 </button>
-                {isSup && (
+                {isDestinationVendor && (
                   <button
                     type="button"
                     onClick={applyAssignment}
                     style={{ ...S.btn, borderColor: 'var(--accent)', color: 'var(--accent)' }}
-                    disabled={assignmentLoading || !assignmentInfo || assignmentInfo?.estado !== 'PENDIENTE'}
-                    title={!assignmentInfo ? 'Valida el código primero' : assignmentInfo?.estado !== 'PENDIENTE' ? 'Esta asignación ya fue aplicada o anulada' : 'Aplicar asignación'}
+                    disabled={assignmentLoading || !assignmentInfo || assignmentInfo?.estado !== 'PENDIENTE' || !canApplyToDestination(assignmentInfo)}
+                    title={!assignmentInfo ? 'Valida el código primero' : assignmentInfo?.estado !== 'PENDIENTE' ? 'Esta asignación ya fue aplicada o anulada' : 'Aplicar sin volver a validar'}
                   >
                     Aplicar
                   </button>
