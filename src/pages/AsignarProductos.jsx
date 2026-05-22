@@ -156,7 +156,7 @@ export default function AsignarProductos() {
       product?.tipo || product?.ano,
       product?.ano && product?.tipo ? product?.ano : null,
       product?.color,
-      product?.cilindrada,
+      product?.potencia ?? product?.cilindrada,
     ].filter(Boolean)
     return parts.join(' · ') || `#${product?.id}`
   }
@@ -171,7 +171,7 @@ export default function AsignarProductos() {
         <td>${it.tipo ?? ''}</td>
         <td>${it.ano ?? ''}</td>
         <td>${it.color ?? ''}</td>
-        <td>${it.cilindrada ?? ''}</td>
+        <td>${it.potencia ?? it.cilindrada ?? ''}</td>
         <td style="text-align:right">${Number(it.cantidad ?? 0)}</td>
         <td style="text-align:right">${Number(it.precio_venta ?? 0).toFixed(2)}</td>
         <td style="text-align:right">${Number(it.subtotal ?? 0).toFixed(2)}</td>
@@ -207,7 +207,7 @@ export default function AsignarProductos() {
   <table>
     <thead>
       <tr>
-        <th>Tipo</th><th>Marca</th><th>Producto</th><th>Codigo/Descripcion</th><th>Año</th><th>Color</th><th>Cilindrada</th>
+        <th>Tipo</th><th>Marca</th><th>Producto</th><th>Codigo/Descripcion</th><th>Año</th><th>Color</th><th>Potencia / Cilindrada</th>
         <th style="text-align:right">Cantidad</th>
         <th style="text-align:right">Precio venta</th>
         <th style="text-align:right">Subtotal</th>

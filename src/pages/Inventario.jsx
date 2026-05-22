@@ -70,6 +70,7 @@ export default function Inventario() {
   const getPrimaryLabel = (item) => item?.tipo || item?.ano || '-'
   const getProductLabel = (item) => item?.producto || '-'
   const getCylinderLabel = (item) => item?.cilindrada || '-'
+  const getPowerLabel = (item) => item?.potencia || '-'
   const getSizeLabel = (item) => item?.talla || '-'
   const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getPrimaryLabel(item)} ${getCylinderLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
@@ -711,7 +712,7 @@ export default function Inventario() {
                       {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Año</th>}
                       {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
                       {showSizeForTab && <th style={{ padding: '6px 4px' }}>Talla</th>}
-                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Cilindrada</th>}
+                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? 'Potencia' : 'Cilindrada'}</th>}
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
                       <th style={{ padding: '6px 4px' }}>Costo</th>
@@ -727,7 +728,7 @@ export default function Inventario() {
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.ano || '-'}</td>}
                         {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
                         {showSizeForTab && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
-                        {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{getCylinderLabel(it)}</td>}
+                        {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? getPowerLabel(it) : getCylinderLabel(it)}</td>}
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.costo ?? it.precio)}</td>
