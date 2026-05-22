@@ -5,8 +5,9 @@ import DatePickerInput from '../components/DatePickerInput'
 import { api } from '../lib/apiClient'
 
 export default function Reportes() {
-  const { token, esSupervisor } = useAuthStore()
-  const [tipo, setTipo] = useState('ventas')
+  const { token, esSupervisor, esCajero } = useAuthStore()
+  const cashierOnlySales = esCajero()
+  const [tipo, setTipo] = useState(cashierOnlySales ? 'ventas' : 'ventas')
   const [usuarios, setUsuarios] = useState([])
   const [filtro, setFiltro] = useState({ fechaInicio: '', fechaFin: '', usuario_id: '', tipo_producto: '', estado_tramite: '' })
   const [data, setData] = useState(null)
@@ -31,7 +32,9 @@ export default function Reportes() {
       ? await api.reporteVentas(payload)
       : tipo === 'proformas'
         ? await api.reporteProformas(payload)
-        : await api.reporteTramites(payload)
+        : tipo === 'tramites'
+          ? await api.reporteTramites(payload)
+          : await api.reporteIngresosEgresos(payload)
     if (!res.ok) return toast.error(res.error || 'Error')
     setData(res.data)
   }
@@ -49,12 +52,26 @@ export default function Reportes() {
       ? await api.exportarReporteVentasArchivo(payload)
       : tipo === 'proformas'
         ? await api.exportarReporteProformasArchivo(payload)
-        : await api.exportarReporteTramitesArchivo(payload)
+        : tipo === 'tramites'
+          ? await api.exportarReporteTramitesArchivo(payload)
+          : await api.exportarReporteIngresosEgresosArchivo(payload)
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Archivo generado')
   }
 
-  const rows = tipo === 'ventas' ? data?.ventas : tipo === 'proformas' ? data?.proformas : data?.tramites
+  const rows = tipo === 'ventas' ? data?.ventas : tipo === 'proformas' ? data?.proformas : tipo === 'tramites' ? data?.tramites : data?.por_tipo
+  const availableTabs = cashierOnlySales
+    ? [
+        { id: 'ventas', label: 'Ventas' },
+        { id: 'ingresos-egresos', label: 'Ingresos / egresos' },
+      ]
+    : [
+        { id: 'ventas', label: 'Ventas' },
+        { id: 'proformas', label: 'Proformas' },
+        { id: 'tramites', label: 'Tramites' },
+        { id: 'ingresos-egresos', label: 'Ingresos / egresos' },
+      ]
+  const formatBs = (value) => `Bs ${Number(value || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
 
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
@@ -68,13 +85,15 @@ export default function Reportes() {
     <div className="page-shell" style={S.page}>
       <div className="page-header">
         <div style={{ fontSize: 10, letterSpacing: 4, color: 'var(--accent)', textTransform: 'uppercase', fontFamily: 'monospace' }}>REPORTES</div>
-        <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>Ventas y Proformas</h1>
+        <h1 style={{ margin: '4px 0 0', fontSize: 22, color: 'var(--text-strong)' }}>{cashierOnlySales ? 'Reportes de ventas' : 'Ventas y Proformas'}</h1>
       </div>
 
       <div className="button-row" style={{ marginBottom: 12 }}>
-        <button onClick={() => setTipo('ventas')} style={{ ...S.btn, background: tipo === 'ventas' ? 'var(--accent)' : 'transparent', color: tipo === 'ventas' ? 'var(--accent-contrast)' : 'var(--text-dim)' }}>Ventas</button>
-        <button onClick={() => setTipo('proformas')} style={{ ...S.btn, background: tipo === 'proformas' ? 'var(--accent)' : 'transparent', color: tipo === 'proformas' ? 'var(--accent-contrast)' : 'var(--text-dim)' }}>Proformas</button>
-        <button onClick={() => setTipo('tramites')} style={{ ...S.btn, background: tipo === 'tramites' ? 'var(--accent)' : 'transparent', color: tipo === 'tramites' ? 'var(--accent-contrast)' : 'var(--text-dim)' }}>Tramites</button>
+        {availableTabs.map((tab) => (
+          <button key={tab.id} onClick={() => { setTipo(tab.id); setData(null) }} style={{ ...S.btn, background: tipo === tab.id ? 'var(--accent)' : 'transparent', color: tipo === tab.id ? 'var(--accent-contrast)' : 'var(--text-dim)' }}>
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <div style={S.card}>
@@ -141,6 +160,53 @@ export default function Reportes() {
       <div style={{ marginTop: 14, ...S.card }}>
         {!rows ? (
           <div style={{ color: 'var(--text-muted)' }}>Sin datos</div>
+        ) : tipo === 'ingresos-egresos' ? (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div className="grid-four">
+              <div style={{ ...S.card, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Ingresos</div>
+                <div style={{ fontSize: 20, color: 'var(--text-strong)' }}>{formatBs(data?.resumen_general?.ingresos ?? 0)}</div>
+              </div>
+              <div style={{ ...S.card, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Egresos</div>
+                <div style={{ fontSize: 20, color: 'var(--text-strong)' }}>{formatBs(data?.resumen_general?.egresos ?? 0)}</div>
+              </div>
+              <div style={{ ...S.card, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Utilidad</div>
+                <div style={{ fontSize: 20, color: 'var(--text-strong)' }}>{formatBs(data?.resumen_general?.utilidad ?? 0)}</div>
+              </div>
+              <div style={{ ...S.card, padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Unidades</div>
+                <div style={{ fontSize: 20, color: 'var(--text-strong)' }}>{data?.resumen_general?.unidades ?? 0}</div>
+              </div>
+            </div>
+            <div className="table-wrap list-scroll">
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 4px' }}>Tipo</th>
+                    <th style={{ padding: '6px 4px' }}>Items</th>
+                    <th style={{ padding: '6px 4px' }}>Unidades</th>
+                    <th style={{ padding: '6px 4px' }}>Ingresos</th>
+                    <th style={{ padding: '6px 4px' }}>Egresos</th>
+                    <th style={{ padding: '6px 4px' }}>Utilidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.tipo_producto} style={{ borderTop: '1px solid var(--divider)' }}>
+                      <td style={{ padding: '6px 4px' }}>{row.label}</td>
+                      <td style={{ padding: '6px 4px' }}>{row.items}</td>
+                      <td style={{ padding: '6px 4px' }}>{row.unidades}</td>
+                      <td style={{ padding: '6px 4px' }}>{formatBs(row.ingresos)}</td>
+                      <td style={{ padding: '6px 4px' }}>{formatBs(row.egresos)}</td>
+                      <td style={{ padding: '6px 4px' }}>{formatBs(row.utilidad)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
           <div className="table-wrap list-scroll">
             <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>

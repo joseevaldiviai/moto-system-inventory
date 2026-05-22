@@ -12,6 +12,11 @@ const INITIAL_ITEM_FORM = {
   descuento_pct: 0,
 }
 
+const buildTramiteState = (enabled = false, costoTotal = 0) => ({
+  enabled,
+  costo_total: Number(costoTotal || 0),
+})
+
 export default function Ventas() {
   const { token, usuario, esSupervisor } = useAuthStore()
   const [proformas, setProformas] = useState([])
@@ -42,6 +47,12 @@ export default function Ventas() {
   const isCentralSaleContext = isSup || usuario?.punto_venta_tipo === 'CENTRAL'
 
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
+  const getDefaultTramiteCost = (tipo) => Number(tipo === 'bsisa' ? costos.bsisa : costos.placa) || 0
+  const createEmptyTramites = () => ({
+    bsisa: buildTramiteState(false, getDefaultTramiteCost('bsisa')),
+    placa: buildTramiteState(false, getDefaultTramiteCost('placa')),
+  })
+  const supportsTramites = (item) => !!(item?.moto_id || item?.moto_e_id)
   const load = async () => {
     const [p, m, me, a, r, marcasRes] = await Promise.all([
       api.listarProformas({ token, estado: 'ACTIVA' }),
@@ -103,7 +114,7 @@ export default function Ventas() {
       ? accesorios
       : repuestos
 
-  const marcasDisponibles = marcas.map((marca) => marca.nombre).sort((a, b) => a.localeCompare(b))
+  const marcasDisponibles = [...new Set(catalogoActual.map((producto) => producto.marca).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const productosFiltrados = itemForm.marca
     ? catalogoActual.filter((p) => p.marca === itemForm.marca)
     : []
@@ -138,7 +149,7 @@ export default function Ventas() {
       descripcion: productoLabel(itemForm.producto, productoId),
       _descuento_maximo: producto?.descuento_maximo_pct ?? null,
       _tipo_producto: itemForm.producto,
-      _tramites: { bsisa: false, placa: false },
+      _tramites: createEmptyTramites(),
     }
     if (itemForm.producto === 'moto') payload.moto_id = productoId
     if (itemForm.producto === 'moto_e') payload.moto_e_id = productoId
@@ -160,7 +171,33 @@ export default function Ventas() {
   const toggleDirectSaleTramite = (idx, tipo) => {
     setItems(prev => prev.map((item, index) => (
       index === idx
-        ? { ...item, _tramites: { ...item._tramites, [tipo]: !item._tramites?.[tipo] } }
+        ? {
+            ...item,
+            _tramites: {
+              ...item._tramites,
+              [tipo]: buildTramiteState(
+                !item._tramites?.[tipo]?.enabled,
+                Math.max(Number(item._tramites?.[tipo]?.costo_total ?? 0), getDefaultTramiteCost(tipo))
+              ),
+            },
+          }
+        : item
+    )))
+  }
+
+  const updateDirectSaleTramiteCost = (idx, tipo, value) => {
+    setItems((prev) => prev.map((item, index) => (
+      index === idx
+        ? {
+            ...item,
+            _tramites: {
+              ...item._tramites,
+              [tipo]: buildTramiteState(
+                !!item._tramites?.[tipo]?.enabled,
+                value
+              ),
+            },
+          }
         : item
     )))
   }
@@ -177,52 +214,67 @@ export default function Ventas() {
   const totalDirecto = () => items.reduce((sum, item) => sum + (getUnitSalePrice(item) * Number(item.cantidad || 1)), 0)
   const totalTramitesDirecto = () => items.reduce((sum, item) => (
     sum
-    + (item._tramites?.bsisa ? costos.bsisa : 0)
-    + (item._tramites?.placa ? costos.placa : 0)
+    + (item._tramites?.bsisa?.enabled ? Number(item._tramites.bsisa.costo_total || 0) : 0)
+    + (item._tramites?.placa?.enabled ? Number(item._tramites.placa.costo_total || 0) : 0)
   ), 0)
+
+  const validateTramites = (tramiteState) => {
+    for (const tipo of ['bsisa', 'placa']) {
+      if (!tramiteState?.[tipo]?.enabled) continue
+      const costo = Number(tramiteState?.[tipo]?.costo_total || 0)
+      const minimo = getDefaultTramiteCost(tipo)
+      if (costo < minimo) {
+        throw new Error(`El costo de ${tipo.toUpperCase()} no puede ser menor a ${formatBs(minimo)}`)
+      }
+    }
+  }
 
   const crearVentaDirecta = async () => {
     if (!canOperate) return toast.error('Asigna un punto de venta al vendedor antes de vender')
     if (!cliente.nombre || !cliente.ci_nit || !cliente.celular) return toast.error('Completa datos del cliente')
     if (!items.length) return toast.error('Agrega al menos un item')
+    try {
+      const payloadItems = items.map((item) => {
+        const payload = {
+          cantidad: Number(item.cantidad || 1),
+          descuento_pct: Number(item.descuento_pct || 0),
+          descripcion: item.descripcion,
+        }
+        if (item.moto_id) payload.moto_id = item.moto_id
+        if (item.moto_e_id) payload.moto_e_id = item.moto_e_id
+        if (item.accesorio_id) payload.accesorio_id = item.accesorio_id
+        if (item.repuesto_id) payload.repuesto_id = item.repuesto_id
+        if (supportsTramites(item)) {
+          validateTramites(item._tramites)
+          const tramites = []
+          if (item._tramites?.bsisa?.enabled) tramites.push({ tipo: 'BSISA', costo_total: Number(item._tramites.bsisa.costo_total || 0) })
+          if (item._tramites?.placa?.enabled) tramites.push({ tipo: 'PLACA', costo_total: Number(item._tramites.placa.costo_total || 0) })
+          payload.tramites = tramites
+        }
+        return payload
+      })
 
-    const payloadItems = items.map((item) => {
-      const payload = {
-        cantidad: Number(item.cantidad || 1),
-        descuento_pct: Number(item.descuento_pct || 0),
-        descripcion: item.descripcion,
-      }
-      if (item.moto_id) payload.moto_id = item.moto_id
-      if (item.moto_e_id) payload.moto_e_id = item.moto_e_id
-      if (item.accesorio_id) payload.accesorio_id = item.accesorio_id
-      if (item.repuesto_id) payload.repuesto_id = item.repuesto_id
-      if (item.moto_id) {
-        const tramites = []
-        if (item._tramites?.bsisa) tramites.push('BSISA')
-        if (item._tramites?.placa) tramites.push('PLACA')
-        payload.tramites = tramites
-      }
-      return payload
-    })
+      const res = await api.crearVenta({
+        token,
+        data: {
+          cliente_nombre: cliente.nombre,
+          cliente_ci_nit: cliente.ci_nit,
+          cliente_celular: cliente.celular,
+          items: payloadItems,
+        },
+      })
+      if (!res.ok) return toast.error(res.error || 'Error')
 
-    const res = await api.crearVenta({
-      token,
-      data: {
-        cliente_nombre: cliente.nombre,
-        cliente_ci_nit: cliente.ci_nit,
-        cliente_celular: cliente.celular,
-        items: payloadItems,
-      },
-    })
-    if (!res.ok) return toast.error(res.error || 'Error')
-
-    setLastSale({ id: res.data.id })
-    toast.success('Venta registrada')
-    await printSaleDocuments(res.data.id)
-    setItems([])
-    setCliente({ nombre: '', ci_nit: '', celular: '' })
-    load()
-    loadVentas()
+      setLastSale({ id: res.data.id })
+      toast.success('Venta registrada')
+      await printSaleDocuments(res.data.id)
+      setItems([])
+      setCliente({ nombre: '', ci_nit: '', celular: '' })
+      load()
+      loadVentas()
+    } catch (error) {
+      toast.error(error.message || 'Error al validar los trámites')
+    }
   }
 
   const openDetail = async (id) => {
@@ -233,28 +285,55 @@ export default function Ventas() {
 
   const toggleTramite = (piId, tipo) => {
     setTramites(prev => {
-      const current = prev[piId] || { bsisa: false, placa: false }
-      return { ...prev, [piId]: { ...current, [tipo]: !current[tipo] } }
+      const current = prev[piId] || createEmptyTramites()
+      return {
+        ...prev,
+        [piId]: {
+          ...current,
+          [tipo]: buildTramiteState(
+            !current[tipo]?.enabled,
+            Math.max(Number(current[tipo]?.costo_total ?? 0), getDefaultTramiteCost(tipo))
+          ),
+        },
+      }
+    })
+  }
+
+  const updateTramiteCost = (piId, tipo, value) => {
+    setTramites((prev) => {
+      const current = prev[piId] || createEmptyTramites()
+      return {
+        ...prev,
+        [piId]: {
+          ...current,
+          [tipo]: buildTramiteState(!!current[tipo]?.enabled, value),
+        },
+      }
     })
   }
 
   const consolidar = async (id) => {
     if (!canOperate) return toast.error('Asigna un punto de venta al vendedor antes de vender')
-    const tramitesPayload = []
-    for (const [piId, flags] of Object.entries(tramites)) {
-      if (flags.bsisa) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'BSISA' })
-      if (flags.placa) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'PLACA' })
-    }
+    try {
+      const tramitesPayload = []
+      for (const [piId, flags] of Object.entries(tramites)) {
+        validateTramites(flags)
+        if (flags.bsisa?.enabled) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'BSISA', costo_total: Number(flags.bsisa.costo_total || 0) })
+        if (flags.placa?.enabled) tramitesPayload.push({ proforma_item_id: Number(piId), tipo: 'PLACA', costo_total: Number(flags.placa.costo_total || 0) })
+      }
 
-    const res = await api.crearVenta({ token, data: { proforma_id: id, tramites: tramitesPayload } })
-    if (!res.ok) return toast.error(res.error || 'Error')
-    setLastSale({ id: res.data.id })
-    toast.success('Venta consolidada')
-    await printSaleDocuments(res.data.id)
-    setDetail(null)
-    setTramites({})
-    load()
-    loadVentas()
+      const res = await api.crearVenta({ token, data: { proforma_id: id, tramites: tramitesPayload } })
+      if (!res.ok) return toast.error(res.error || 'Error')
+      setLastSale({ id: res.data.id })
+      toast.success('Venta consolidada')
+      await printSaleDocuments(res.data.id)
+      setDetail(null)
+      setTramites({})
+      load()
+      loadVentas()
+    } catch (error) {
+      toast.error(error.message || 'Error al validar los trámites')
+    }
   }
 
   const formatSaleDate = (value) => {
@@ -291,8 +370,8 @@ export default function Ventas() {
   const tramitesTotal = () => {
     let total = 0
     for (const flags of Object.values(tramites)) {
-      if (flags.bsisa) total += costos.bsisa
-      if (flags.placa) total += costos.placa
+      if (flags.bsisa?.enabled) total += Number(flags.bsisa.costo_total || 0)
+      if (flags.placa?.enabled) total += Number(flags.placa.costo_total || 0)
     }
     return total
   }
@@ -510,14 +589,23 @@ export default function Ventas() {
                     <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>
                       Cantidad {item.cantidad} · Desc {item.descuento_pct}% · Subtotal {formatBs(getUnitSalePrice(item) * Number(item.cantidad || 1))}
                     </div>
-                    {item.moto_id ? (
-                      <div className="button-row" style={{ gap: 12, marginTop: 8, fontSize: 12 }}>
-                        <label>
-                          <input type="checkbox" checked={!!item._tramites?.bsisa} onChange={() => toggleDirectSaleTramite(idx, 'bsisa')} /> BSISA (+{formatBs(costos.bsisa)})
-                        </label>
-                        <label>
-                          <input type="checkbox" checked={!!item._tramites?.placa} onChange={() => toggleDirectSaleTramite(idx, 'placa')} /> PLACA (+{formatBs(costos.placa)})
-                        </label>
+                    {supportsTramites(item) ? (
+                      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                        {['bsisa', 'placa'].map((tipo) => (
+                          <div key={tipo} className="button-row" style={{ gap: 10, alignItems: 'center', fontSize: 12 }}>
+                            <label>
+                              <input type="checkbox" checked={!!item._tramites?.[tipo]?.enabled} onChange={() => toggleDirectSaleTramite(idx, tipo)} /> {tipo.toUpperCase()} (mínimo {formatBs(getDefaultTramiteCost(tipo))})
+                            </label>
+                            {item._tramites?.[tipo]?.enabled && (
+                              <input
+                                style={{ ...S.input, maxWidth: 160 }}
+                                inputMode="decimal"
+                                value={item._tramites?.[tipo]?.costo_total ?? getDefaultTramiteCost(tipo)}
+                                onChange={(e) => updateDirectSaleTramiteCost(idx, tipo, e.target.value)}
+                              />
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ) : null}
                     <div className="button-row" style={{ marginTop: 8 }}>
@@ -560,17 +648,26 @@ export default function Ventas() {
             {detail.items.map(it => (
               <div key={it.id} style={{ padding: '8px 0', borderTop: '1px solid var(--divider)' }}>
                 <div style={{ fontSize: 12 }}>{it.descripcion} · Cant {it.cantidad}</div>
-                {it.moto_id ? (
-                  <div className="button-row" style={{ gap: 12, marginTop: 6, fontSize: 12 }}>
-                    <label>
-                      <input type="checkbox" checked={!!tramites[it.id]?.bsisa} onChange={() => toggleTramite(it.id, 'bsisa')} /> BSISA
-                    </label>
-                    <label>
-                      <input type="checkbox" checked={!!tramites[it.id]?.placa} onChange={() => toggleTramite(it.id, 'placa')} /> PLACA
-                    </label>
+                {(it.moto_id || it.moto_e_id) ? (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+                    {['bsisa', 'placa'].map((tipo) => (
+                      <div key={tipo} className="button-row" style={{ gap: 10, alignItems: 'center', fontSize: 12 }}>
+                        <label>
+                          <input type="checkbox" checked={!!tramites[it.id]?.[tipo]?.enabled} onChange={() => toggleTramite(it.id, tipo)} /> {tipo.toUpperCase()} (mínimo {formatBs(getDefaultTramiteCost(tipo))})
+                        </label>
+                        {tramites[it.id]?.[tipo]?.enabled && (
+                          <input
+                            style={{ ...S.input, maxWidth: 160 }}
+                            inputMode="decimal"
+                            value={tramites[it.id]?.[tipo]?.costo_total ?? getDefaultTramiteCost(tipo)}
+                            onChange={(e) => updateTramiteCost(it.id, tipo, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>No aplica (no es moto)</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>No aplica (no es moto o moto-e)</div>
                 )}
               </div>
             ))}

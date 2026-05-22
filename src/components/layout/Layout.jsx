@@ -6,14 +6,14 @@ import logo from '../../images/moto-seven7.jpeg'
 import { api } from '../../lib/apiClient'
 
 const NAV = [
-  { to:'/',          label:'Dashboard',  icon:'▦',  roles:['SUPERVISOR','CAJERO'] },
-  { to:'/inventario',label:'Inventario', icon:'📦', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/asignar-productos', label:'Asignar productos', icon:'🧾', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/proformas', label:'Proformas',  icon:'📋', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/ventas',    label:'Ventas',     icon:'💰', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/reportes',  label:'Reportes',   icon:'📊', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/manual',    label:'Manual',     icon:'📘', roles:['SUPERVISOR','CAJERO'] },
-  { to:'/perfil',    label:'Mi Cuenta',  icon:'🔑', roles:['SUPERVISOR','CAJERO'] },
+  { to:'/',          label:'Dashboard',  icon:'▦',  roles:['SUPERVISOR','VENDEDOR'] },
+  { to:'/inventario',label:'Inventario', icon:'📦', roles:['SUPERVISOR','VENDEDOR'] },
+  { to:'/asignar-productos', label:'Asignar productos', icon:'🧾', roles:['SUPERVISOR','VENDEDOR'] },
+  { to:'/proformas', label:'Proformas',  icon:'📋', roles:['SUPERVISOR','VENDEDOR','CAJERO'] },
+  { to:'/ventas',    label:'Ventas',     icon:'💰', roles:['SUPERVISOR','VENDEDOR','CAJERO'] },
+  { to:'/reportes',  label:'Reportes',   icon:'📊', roles:['SUPERVISOR','VENDEDOR','CAJERO'] },
+  { to:'/manual',    label:'Manual',     icon:'📘', roles:['SUPERVISOR','VENDEDOR'] },
+  { to:'/perfil',    label:'Mi Cuenta',  icon:'🔑', roles:['SUPERVISOR','VENDEDOR','CAJERO'] },
   { to:'/usuarios',  label:'Usuarios',   icon:'🔐', roles:['SUPERVISOR'] },
 ]
 

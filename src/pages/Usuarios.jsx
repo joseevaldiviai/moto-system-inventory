@@ -3,7 +3,7 @@ import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 import { api } from '../lib/apiClient'
 
-const INITIAL_USER_FORM = { nombre: '', username: '', password: '', rol: 'CAJERO', punto_venta_id: '' }
+const INITIAL_USER_FORM = { nombre: '', username: '', password: '', rol: 'VENDEDOR', punto_venta_id: '' }
 const INITIAL_POINT_FORM = { nombre: '', codigo: '' }
 
 export default function Usuarios() {
@@ -14,7 +14,7 @@ export default function Usuarios() {
   const [pointForm, setPointForm] = useState(INITIAL_POINT_FORM)
   const [editId, setEditId] = useState(null)
   const [editPass, setEditPass] = useState('')
-  const [editForm, setEditForm] = useState({ rol: 'CAJERO', punto_venta_id: '', activo: true })
+  const [editForm, setEditForm] = useState({ rol: 'VENDEDOR', punto_venta_id: '', activo: true })
 
   const load = async () => {
     const [usersRes, pointsRes] = await Promise.all([
@@ -29,7 +29,7 @@ export default function Usuarios() {
 
   const crear = async () => {
     if (!form.nombre || !form.username || !form.password) return toast.error('Completa todos los campos')
-    if (form.rol === 'CAJERO' && !form.punto_venta_id) return toast.error('Asigna un punto de venta al vendedor')
+    if (form.rol !== 'SUPERVISOR' && !form.punto_venta_id) return toast.error('Asigna un punto de venta al usuario')
     const res = await api.crearUsuario({
       token,
       data: {
@@ -64,7 +64,7 @@ export default function Usuarios() {
 
   const guardarUsuario = async () => {
     if (!editId) return
-    if (editForm.rol === 'CAJERO' && !editForm.punto_venta_id) return toast.error('Asigna un punto de venta al vendedor')
+    if (editForm.rol !== 'SUPERVISOR' && !editForm.punto_venta_id) return toast.error('Asigna un punto de venta al usuario')
     const res = await api.actualizarUsuario({
       token,
       id: editId,
@@ -137,6 +137,7 @@ export default function Usuarios() {
               <div style={S.label}>Rol</div>
               <select style={S.input} value={form.rol} onChange={e => setForm(f => ({ ...f, rol: e.target.value }))}>
                 <option value="SUPERVISOR">SUPERVISOR</option>
+                <option value="VENDEDOR">VENDEDOR</option>
                 <option value="CAJERO">CAJERO</option>
               </select>
             </div>
@@ -191,6 +192,7 @@ export default function Usuarios() {
                         <div style={S.label}>Rol</div>
                         <select style={S.input} value={editForm.rol} onChange={e => setEditForm(f => ({ ...f, rol: e.target.value }))}>
                           <option value="SUPERVISOR">SUPERVISOR</option>
+                          <option value="VENDEDOR">VENDEDOR</option>
                           <option value="CAJERO">CAJERO</option>
                         </select>
                       </div>

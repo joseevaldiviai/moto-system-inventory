@@ -250,7 +250,12 @@ export const api = {
   exportarMotosArchivo: ({ token }) => safeDownload('/exports/inventory/motos', { token, filename: 'motos.csv' }),
   exportarMotosEArchivo: ({ token }) => safeDownload('/exports/inventory/motos-e', { token, filename: 'motos-e.csv' }),
 
-  listarMarcas: ({ token }) => request('/brands', { token }),
+  listarMarcas: ({ token, kind } = {}) => {
+    const query = new URLSearchParams();
+    if (kind) query.set('kind', kind);
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/brands${suffix}`, { token });
+  },
   crearMarca: ({ token, data }) => request('/brands', { method: 'POST', token, body: { data } }),
   actualizarMarca: ({ token, id, data }) => request(`/brands/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarMarca: ({ token, id }) => request(`/brands/${id}`, { method: 'DELETE', token }),
@@ -364,6 +369,15 @@ export const api = {
     const suffix = query.toString() ? `?${query}` : '';
     return request(`/reports/tramites${suffix}`, { token });
   },
+  reporteIngresosEgresos: ({ token, fechaInicio, fechaFin, usuario_id, tipo_producto } = {}) => {
+    const query = new URLSearchParams();
+    if (fechaInicio) query.set('fechaInicio', fechaInicio);
+    if (fechaFin) query.set('fechaFin', fechaFin);
+    if (usuario_id) query.set('usuario_id', usuario_id);
+    if (tipo_producto) query.set('tipo_producto', tipo_producto);
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/reports/financial-summary${suffix}`, { token });
+  },
   exportarReporteVentasArchivo: ({ token, fechaInicio, fechaFin, usuario_id, tipo_producto } = {}) => {
     const query = new URLSearchParams();
     if (fechaInicio) query.set('fechaInicio', fechaInicio);
@@ -388,6 +402,15 @@ export const api = {
     if (estado) query.set('estado', estado);
     const suffix = query.toString() ? `?${query}` : '';
     return safeDownload(`/exports/reports/tramites${suffix}`, { token, filename: 'reporte-tramites.csv' });
+  },
+  exportarReporteIngresosEgresosArchivo: ({ token, fechaInicio, fechaFin, usuario_id, tipo_producto } = {}) => {
+    const query = new URLSearchParams();
+    if (fechaInicio) query.set('fechaInicio', fechaInicio);
+    if (fechaFin) query.set('fechaFin', fechaFin);
+    if (usuario_id) query.set('usuario_id', usuario_id);
+    if (tipo_producto) query.set('tipo_producto', tipo_producto);
+    const suffix = query.toString() ? `?${query}` : '';
+    return safeDownload(`/exports/reports/financial-summary${suffix}`, { token, filename: 'reporte-ingresos-egresos.csv' });
   },
 };
 

@@ -8,6 +8,12 @@ import { getProductGridColumns } from '../lib/productGridColumns'
 
 const INVENTORY_GRID_PREFS_KEY = 'inventory:grid:detail-columns'
 const INVENTORY_POINT_GRID_PREFS_KEY = 'inventory:point-grid:detail-columns'
+const BRAND_GROUP_OPTIONS = [
+  { value: 'motos', label: 'Motos' },
+  { value: 'motos_e', label: 'Motos-E' },
+  { value: 'accesorios', label: 'Accesorios' },
+  { value: 'repuestos', label: 'Repuestos' },
+]
 
 const loadGridPrefs = (key) => {
   if (typeof window === 'undefined') return {}
@@ -47,7 +53,7 @@ export default function Inventario() {
   const [csvText, setCsvText] = useState('')
   const [csvFileName, setCsvFileName] = useState('')
   const [form, setForm] = useState({})
-  const [marcaForm, setMarcaForm] = useState({ nombre: '' })
+  const [marcaForm, setMarcaForm] = useState({ nombre: '', grupo_tipo: 'motos' })
   const [config, setConfig] = useState({ bsisa: '', placa: '' })
   const [assignmentCode, setAssignmentCode] = useState('')
   const [assignmentInfo, setAssignmentInfo] = useState(null)
@@ -149,6 +155,8 @@ export default function Inventario() {
   ]
   const activeDestinationPoints = puntos.filter((point) => point.tipo !== 'CENTRAL' && point.activo)
   const defaultTransferPointId = activeDestinationPoints[0] ? String(activeDestinationPoints[0].id) : ''
+  const selectedBrandGroup = tab === 'marcas' ? marcaForm.grupo_tipo : tab
+  const brandOptions = marcas.filter((marca) => marca.activo && marca.grupo_tipo === selectedBrandGroup)
 
   const fetchByTab = async (currentTab, params = {}) => {
     if (currentTab === 'motos') return api.listarMotos({ token, ...params })
@@ -167,10 +175,7 @@ export default function Inventario() {
         ...(inventoryParams || {}),
         ...(tab === 'marcas' || !searchValue ? {} : { buscar: searchValue }),
       })
-      if (res?.ok) {
-        setItems(res.data)
-        if (tab === 'marcas') setMarcas(res.data)
-      }
+      if (res?.ok) setItems(res.data)
       if (isSup && selectedPointId && tab !== 'marcas') {
         const pointRes = await fetchByTab(tab, {
           ...(searchValue ? { buscar: searchValue } : {}),
@@ -232,10 +237,10 @@ export default function Inventario() {
   const handleCrearMarca = async () => {
     const nombre = marcaForm.nombre?.trim().toLocaleUpperCase('es')
     if (!nombre) return toast.error('Ingresa un nombre')
-    const res = await api.crearMarca({ token, data: { nombre } })
+    const res = await api.crearMarca({ token, data: { nombre, grupo_tipo: marcaForm.grupo_tipo } })
     if (!res.ok) return toast.error(res.error || 'Error')
     toast.success('Marca creada')
-    setMarcaForm({ nombre: '' })
+    setMarcaForm((current) => ({ ...current, nombre: '' }))
     const r = await api.listarMarcas({ token })
     if (r.ok) {
       setMarcas(r.data)
@@ -425,8 +430,11 @@ export default function Inventario() {
     setCsvFileName(file.name)
   }
 
-  const displayedItems = tab === 'marcas' && search.trim()
-    ? items.filter((item) => item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
+  const displayedItems = tab === 'marcas'
+    ? items.filter((item) => (
+        item.grupo_tipo === marcaForm.grupo_tipo
+        && (!search.trim() || item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
+      ))
     : items
   const groupedDisplayedItems = tab === 'marcas' ? displayedItems : groupInventoryRows(displayedItems, true)
   const groupedPointItems = groupInventoryRows(pointItems, false)
@@ -668,6 +676,7 @@ export default function Inventario() {
                   <thead>
                     <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
                       <th style={{ padding: '6px 4px' }}>Marca</th>
+                      <th style={{ padding: '6px 4px' }}>Grupo</th>
                       <th style={{ padding: '6px 4px' }}>Estado</th>
                     </tr>
                   </thead>
@@ -675,6 +684,7 @@ export default function Inventario() {
                     {displayedItems.map(m => (
                       <tr key={m.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{m.nombre}</td>
+                        <td style={{ padding: '6px 4px' }}>{BRAND_GROUP_OPTIONS.find((option) => option.value === m.grupo_tipo)?.label || m.grupo_tipo}</td>
                         <td style={{ padding: '6px 4px', color: m.activo ? 'var(--text-soft)' : 'var(--text-muted)' }}>
                           {m.activo ? 'Activa' : 'Inactiva'}
                         </td>
@@ -752,15 +762,32 @@ export default function Inventario() {
                 {tab === 'marcas' ? 'Nueva marca' : `Nuevo ${tab}`}
               </div>
               {tab === 'marcas' ? (
-                <div className="button-row">
-                  <input
-                    style={S.input}
-                    placeholder="Nombre de marca"
-                    value={marcaForm.nombre}
-                    onChange={e => setMarcaForm({ nombre: e.target.value.toLocaleUpperCase('es') })}
-                  />
-                  <button onClick={handleCrearMarca} style={S.btn}>Agregar</button>
-                </div>
+                <>
+                  <div className="grid-two-tight">
+                    <div>
+                      <div style={S.label}>Grupo</div>
+                      <select
+                        style={S.input}
+                        value={marcaForm.grupo_tipo}
+                        onChange={(e) => setMarcaForm((current) => ({ ...current, grupo_tipo: e.target.value }))}
+                      >
+                        {BRAND_GROUP_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={S.label}>Nombre de marca</div>
+                      <input
+                        style={S.input}
+                        placeholder="Nombre de marca"
+                        value={marcaForm.nombre}
+                        onChange={e => setMarcaForm((current) => ({ ...current, nombre: e.target.value.toLocaleUpperCase('es') }))}
+                      />
+                    </div>
+                  </div>
+                  <button onClick={handleCrearMarca} style={{ ...S.btn, marginTop: 10 }}>Agregar</button>
+                </>
               ) : (
                 <>
                   <div className="grid-two-tight">
@@ -778,7 +805,7 @@ export default function Inventario() {
                           >
                             <option value="">Elegir marca</option>
                             {tab !== 'motos' && tab !== 'motos_e' && <option value="0">— Sin marca —</option>}
-                            {marcas.filter(m => m.activo).map(m => (
+                            {brandOptions.map(m => (
                               <option key={m.id} value={m.id}>{m.nombre}</option>
                             ))}
                           </select>

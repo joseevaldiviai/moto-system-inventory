@@ -62,6 +62,8 @@ const useAuthStore = create((set, get) => ({
   },
 
   esSupervisor: () => get().usuario?.rol === 'SUPERVISOR',
+  esVendedor: () => get().usuario?.rol === 'VENDEDOR',
+  esCajero: () => get().usuario?.rol === 'CAJERO',
 
   setTema: (tema) => {
     const user = get().usuario

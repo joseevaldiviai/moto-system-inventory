@@ -29,6 +29,21 @@ function SupervisorRoute({ children }) {
   return children
 }
 
+function RoleRoute({ children, allowedRoles }) {
+  const { token, usuario, authReady } = useAuthStore()
+  if (!authReady) return null
+  if (!token) return <Navigate to="/login" replace />
+  if (!allowedRoles.includes(usuario?.rol)) return <Navigate to="/" replace />
+  return children
+}
+
+function HomeRoute() {
+  const { usuario, authReady } = useAuthStore()
+  if (!authReady) return null
+  if (usuario?.rol === 'CAJERO') return <Navigate to="/ventas" replace />
+  return <Dashboard />
+}
+
 export default function App() {
   const { tema, initializeAuth, attachSessionListeners, startSessionMonitor } = useAuthStore()
 
@@ -85,13 +100,13 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route index             element={<Dashboard />} />
-          <Route path="inventario" element={<Inventario />} />
-          <Route path="asignar-productos" element={<AsignarProductos />} />
-          <Route path="proformas"  element={<Proformas />} />
-          <Route path="ventas"     element={<Ventas />} />
-          <Route path="reportes"   element={<Reportes />} />
-          <Route path="manual"     element={<Manual />} />
+          <Route index element={<HomeRoute />} />
+          <Route path="inventario" element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR']}><Inventario /></RoleRoute>} />
+          <Route path="asignar-productos" element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR']}><AsignarProductos /></RoleRoute>} />
+          <Route path="proformas"  element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR', 'CAJERO']}><Proformas /></RoleRoute>} />
+          <Route path="ventas"     element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR', 'CAJERO']}><Ventas /></RoleRoute>} />
+          <Route path="reportes"   element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR', 'CAJERO']}><Reportes /></RoleRoute>} />
+          <Route path="manual"     element={<RoleRoute allowedRoles={['SUPERVISOR', 'VENDEDOR']}><Manual /></RoleRoute>} />
           <Route path="perfil"     element={<Perfil />} />
           <Route path="usuarios"   element={<SupervisorRoute><Usuarios /></SupervisorRoute>} />
           <Route path="ubicaciones/:pointId" element={<SupervisorRoute><UbicacionInventario /></SupervisorRoute>} />

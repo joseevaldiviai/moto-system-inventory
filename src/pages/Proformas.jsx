@@ -134,7 +134,7 @@ export default function Proformas() {
       ? accesorios
       : repuestos
 
-  const marcasDisponibles = marcas.map((marca) => marca.nombre).sort((a, b) => a.localeCompare(b))
+  const marcasDisponibles = [...new Set(catalogoActual.map((producto) => producto.marca).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const productosFiltrados = itemForm.marca
     ? catalogoActual.filter((p) => p.marca === itemForm.marca)
     : []

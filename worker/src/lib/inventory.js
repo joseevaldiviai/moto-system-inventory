@@ -4,6 +4,7 @@ const TABLES = {
   accesorios: { table: 'accesorios', select: '*, marcas(nombre)', search: ['marca', 'producto', 'tipo', 'talla'] },
   repuestos: { table: 'repuestos', select: '*, marcas(nombre)', search: ['marca', 'producto', 'tipo'] },
 };
+const BRAND_GROUPS = new Set(Object.keys(TABLES));
 
 export function normalizeUpperText(value) {
   const normalized = String(value ?? '').trim();
@@ -32,7 +33,13 @@ export function normalizeStocks(data) {
   return { cantidad_libre, cantidad_reservada, cantidad_vendida };
 }
 
-export async function resolveMarca(admin, data, required = false) {
+function normalizeBrandGroup(kind) {
+  if (!BRAND_GROUPS.has(kind)) throw new Error('Grupo de marca invalido');
+  return kind;
+}
+
+export async function resolveMarca(admin, data, kind, required = false) {
+  const grupoTipo = normalizeBrandGroup(kind);
   let marcaId = data?.marca_id ?? null;
   if (marcaId === '' || marcaId === 0) marcaId = null;
   const marcaNombre = normalizeUpperText(data?.marca);
@@ -40,8 +47,9 @@ export async function resolveMarca(admin, data, required = false) {
   if (marcaId) {
     const { data: row, error } = await admin
       .from('marcas')
-      .select('id, nombre')
+      .select('id, nombre, grupo_tipo')
       .eq('id', marcaId)
+      .eq('grupo_tipo', grupoTipo)
       .eq('activo', true)
       .single();
     if (error || !row) throw new Error('Marca no encontrada');
@@ -52,6 +60,7 @@ export async function resolveMarca(admin, data, required = false) {
     const { data: existing } = await admin
       .from('marcas')
       .select('id, nombre')
+      .eq('grupo_tipo', grupoTipo)
       .ilike('nombre', marcaNombre)
       .maybeSingle();
 
@@ -59,7 +68,7 @@ export async function resolveMarca(admin, data, required = false) {
 
     const { data: created, error } = await admin
       .from('marcas')
-      .insert({ nombre: marcaNombre })
+      .insert({ nombre: marcaNombre, grupo_tipo: grupoTipo })
       .select('id, nombre')
       .single();
     if (error || !created) throw new Error('No se pudo crear la marca');
