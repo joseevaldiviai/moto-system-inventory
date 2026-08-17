@@ -49,6 +49,14 @@ export default function AsignarProductos() {
   })
   const [lastCode, setLastCode] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [review, setReview] = useState(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewSaving, setReviewSaving] = useState(false)
+  const [reviewItems, setReviewItems] = useState([])
+  const [reviewDestino, setReviewDestino] = useState('')
+  const [reviewMotivo, setReviewMotivo] = useState('')
+  const [reviewCatalogo, setReviewCatalogo] = useState([])
+  const [reviewAddForm, setReviewAddForm] = useState({ tipo: 'motos', producto_id: '', cantidad: 1 })
   const isSup = esSupervisor()
 
   const S = {
@@ -137,6 +145,7 @@ export default function AsignarProductos() {
   const resultGridColumns = getProductGridColumns(tab, {
     formatBs,
     includeWarehouse: false,
+    showCost: isSup,
     renderAction: (row) => (
       <button type="button" onClick={() => addItem(row)} style={S.btn} disabled={Number(row?.cantidad_libre || 0) <= 0}>
         Agregar
@@ -296,6 +305,154 @@ export default function AsignarProductos() {
     loadTickets()
   }
 
+  const buildReviewItemLabel = (it) => [
+    it.marca,
+    it.producto,
+    it.tipo || it.ano,
+    it.ano && it.tipo ? it.ano : null,
+    it.color,
+    it.potencia ?? it.cilindrada,
+  ].filter(Boolean).join(' · ') || `#${it.producto_id}`
+
+  const abrirRevision = async (ticket) => {
+    setReviewLoading(true)
+    try {
+      const res = await api.obtenerAsignacionProductos({ token, codigo: ticket.codigo })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo cargar la asignación')
+      setReview(res.data)
+      setReviewItems((res.data.items || []).map((it) => ({ ...it })))
+      setReviewDestino(String(res.data.destino_punto_venta_id ?? ''))
+      setReviewMotivo('')
+      setReviewCatalogo([])
+      setReviewAddForm({ tipo: 'motos', producto_id: '', cantidad: 1 })
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
+  const cargarCatalogoRevision = async (tipo) => {
+    if (!review?.origen_punto_venta_id) return
+    const originPoint = puntos.find((p) => Number(p.id) === Number(review.origen_punto_venta_id))
+    if (!originPoint) return
+    const params = originPoint.tipo === 'CENTRAL'
+      ? { scope: 'central' }
+      : { scope: 'point', puntoVentaId: originPoint.id }
+    const res = await fetchByTab(tipo, { soloStock: true, ...params })
+    if (res?.ok) setReviewCatalogo(res.data || [])
+  }
+
+  const agregarItemRevision = () => {
+    if (!reviewAddForm.producto_id) return toast.error('Selecciona un producto')
+    const productId = Number(reviewAddForm.producto_id)
+    const product = reviewCatalogo.find((p) => Number(p.id) === productId)
+    if (!product) return
+    const cantidad = Number(reviewAddForm.cantidad || 1)
+    const existing = reviewItems.find((it) => it.producto_tipo === reviewAddForm.tipo && Number(it.producto_id) === productId)
+    if (existing) {
+      setReviewItems((prev) => prev.map((it) => it.id === existing.id ? { ...it, cantidad: Number(it.cantidad || 0) + cantidad } : it))
+    } else {
+      setReviewItems((prev) => [...prev, {
+        id: `nuevo-${Date.now()}`,
+        producto_tipo: reviewAddForm.tipo,
+        producto_id: productId,
+        cantidad,
+        marca: product?.marca ?? null,
+        producto: product?.producto ?? null,
+        tipo: product?.tipo ?? null,
+        ano: product?.ano ?? null,
+        color: product?.color ?? null,
+        cilindrada: product?.cilindrada ?? null,
+        potencia: product?.potencia ?? null,
+      }])
+    }
+    setReviewAddForm((f) => ({ ...f, producto_id: '', cantidad: 1 }))
+  }
+
+  const actualizarCantidadRevision = (id, cantidad) => {
+    setReviewItems((prev) => prev.map((it) => it.id === id ? { ...it, cantidad: Number(cantidad || 0) } : it))
+  }
+
+  const quitarItemRevision = (id) => {
+    setReviewItems((prev) => prev.filter((it) => it.id !== id))
+  }
+
+  const reviewPayloadItems = () => reviewItems.map((it) => ({
+    kind: it.producto_tipo,
+    product_id: Number(it.producto_id),
+    cantidad: Number(it.cantidad),
+  }))
+
+  const validarRevision = () => {
+    const payloadItems = reviewPayloadItems()
+    if (!payloadItems.length) return { error: 'La asignación debe tener al menos un item' }
+    if (payloadItems.some((it) => !Number.isFinite(it.cantidad) || it.cantidad <= 0)) return { error: 'Cantidad inválida en los items' }
+    if (reviewDestino && Number(reviewDestino) === Number(review.origen_punto_venta_id)) {
+      return { error: 'El destino no puede ser igual al origen' }
+    }
+    return { payloadItems }
+  }
+
+  const guardarCorrecciones = async () => {
+    const valid = validarRevision()
+    if (valid.error) return toast.error(valid.error)
+    setReviewSaving(true)
+    try {
+      const res = await api.corregirAsignacion({
+        token,
+        codigo: review.codigo,
+        data: {
+          ...(reviewDestino ? { destino_punto_venta_id: Number(reviewDestino) } : {}),
+          items: valid.payloadItems,
+        },
+      })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudieron guardar las correcciones')
+      toast.success('Correcciones guardadas')
+      loadTickets()
+      setReview(null)
+    } finally {
+      setReviewSaving(false)
+    }
+  }
+
+  const autorizarRevision = async () => {
+    const valid = validarRevision()
+    if (valid.error) return toast.error(valid.error)
+    if (!window.confirm(`¿Autorizar la asignación ${review.codigo}? Se transferirá el stock según origen y destino.`)) return
+    setReviewSaving(true)
+    try {
+      const fix = await api.corregirAsignacion({
+        token,
+        codigo: review.codigo,
+        data: {
+          ...(reviewDestino ? { destino_punto_venta_id: Number(reviewDestino) } : {}),
+          items: valid.payloadItems,
+        },
+      })
+      if (!fix?.ok) return toast.error(fix?.error || 'No se pudieron guardar las correcciones')
+      const res = await api.autorizarAsignacion({ token, codigo: review.codigo })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo autorizar la asignación')
+      toast.success('Asignación autorizada y stock transferido')
+      loadTickets()
+      setReview(null)
+    } finally {
+      setReviewSaving(false)
+    }
+  }
+
+  const rechazarRevision = async () => {
+    if (!window.confirm(`¿Rechazar la asignación ${review.codigo}?`)) return
+    setReviewSaving(true)
+    try {
+      const res = await api.rechazarAsignacion({ token, codigo: review.codigo, data: { motivo: reviewMotivo.trim() || undefined } })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo rechazar la asignación')
+      toast.success('Asignación rechazada')
+      loadTickets()
+      setReview(null)
+    } finally {
+      setReviewSaving(false)
+    }
+  }
+
   const originOptions = puntos.filter((p) => p.activo)
   const destinationOptions = puntos.filter((p) => p.activo)
 
@@ -395,8 +552,17 @@ export default function AsignarProductos() {
                     <td style={{ padding: '6px 4px' }}>{t.total_items ?? 0}</td>
                     <td style={{ padding: '6px 4px' }}>{t.estado}</td>
                     <td style={{ padding: '6px 4px', color: 'var(--text-muted)' }}>{formatTicketDate(t.creado_en)}</td>
-                    <td style={{ padding: '6px 4px', minWidth: 180 }}>
+                    <td style={{ padding: '6px 4px', minWidth: 220 }}>
                       <div className="button-row" style={{ gap: 6 }}>
+                        {isSup && t.estado === 'PENDIENTE' && (
+                          <button
+                            type="button"
+                            style={{ ...S.btn, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                            onClick={() => abrirRevision(t)}
+                          >
+                            Revisar
+                          </button>
+                        )}
                         <button
                           type="button"
                           style={S.btn}
@@ -612,6 +778,218 @@ export default function AsignarProductos() {
           )}
         </div>
       </div>
+
+      {review && (
+        <div
+          onClick={() => { if (!reviewSaving) setReview(null) }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(760px, 100%)',
+              maxHeight: '86vh',
+              overflow: 'auto',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: 18,
+              color: 'var(--text)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, color: 'var(--text-strong)' }}>Revisar asignación</div>
+                <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>
+                  {review.codigo} · {review.estado} · Creada {review.creado_en ? new Date(review.creado_en).toLocaleString('es-BO') : '-'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReview(null)}
+                disabled={reviewSaving}
+                style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', fontSize: 12 }}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {reviewLoading ? (
+              <div style={{ color: 'var(--text-muted)' }}>Cargando...</div>
+            ) : (
+              <>
+                <div className="grid-two-tight" style={{ marginBottom: 12 }}>
+                  <div>
+                    <div style={S.label}>Origen</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-strong)' }}>{review.origen_nombre}</div>
+                  </div>
+                  <div>
+                    <div style={S.label}>Destino</div>
+                    <select style={S.input} value={reviewDestino} onChange={(e) => setReviewDestino(e.target.value)} disabled={reviewSaving}>
+                      <option value="">Selecciona destino</option>
+                      {puntos.filter((p) => p.activo).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.tipo === 'CENTRAL' ? 'Almacen Central' : p.nombre}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div style={S.label}>Items ({reviewItems.length})</div>
+                  {reviewItems.length > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--text-soft)' }}>
+                      Unidades: {reviewItems.reduce((sum, it) => sum + Number(it.cantidad || 0), 0)}
+                    </div>
+                  )}
+                </div>
+
+                <div className="table-wrap" style={{ marginBottom: 12 }}>
+                  <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                        <th style={{ padding: '6px 4px' }}>Producto</th>
+                        <th style={{ padding: '6px 4px', width: 110 }}>Cantidad</th>
+                        <th style={{ padding: '6px 4px', width: 80 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reviewItems.map((it) => (
+                        <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
+                          <td style={{ padding: '6px 4px' }}>
+                            <div style={{ color: 'var(--text-strong)' }}>{buildReviewItemLabel(it)}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{it.producto_tipo}</div>
+                          </td>
+                          <td style={{ padding: '6px 4px' }}>
+                            <input
+                              style={S.input}
+                              type="number"
+                              min="1"
+                              value={it.cantidad}
+                              disabled={reviewSaving}
+                              onChange={(e) => actualizarCantidadRevision(it.id, e.target.value)}
+                            />
+                          </td>
+                          <td style={{ padding: '6px 4px' }}>
+                            <button type="button" style={S.btn} disabled={reviewSaving} onClick={() => quitarItemRevision(it.id)}>
+                              Quitar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {reviewItems.length === 0 && (
+                        <tr>
+                          <td colSpan={3} style={{ padding: '10px 4px', color: 'var(--text-muted)' }}>
+                            Sin items. Agrega productos con stock en el origen.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ padding: 10, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+                  <div style={S.label}>Agregar producto (del origen)</div>
+                  <div className="grid-three" style={{ gap: 8, alignItems: 'end' }}>
+                    <div>
+                      <div style={S.label}>Tipo</div>
+                      <select
+                        style={S.input}
+                        value={reviewAddForm.tipo}
+                        disabled={reviewSaving}
+                        onChange={(e) => {
+                          setReviewAddForm({ tipo: e.target.value, producto_id: '', cantidad: 1 })
+                          setReviewCatalogo([])
+                          cargarCatalogoRevision(e.target.value)
+                        }}
+                      >
+                        {PRODUCT_TABS.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={S.label}>Producto</div>
+                      <select
+                        style={S.input}
+                        value={reviewAddForm.producto_id}
+                        disabled={reviewSaving}
+                        onChange={(e) => setReviewAddForm((f) => ({ ...f, producto_id: e.target.value }))}
+                      >
+                        <option value="">{reviewCatalogo.length ? 'Selecciona producto' : 'Cargando...'}</option>
+                        {reviewCatalogo.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {buildProductLabel(p)} · Stock {Number(p.cantidad_libre || 0)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={S.label}>Cantidad</div>
+                      <input
+                        style={S.input}
+                        type="number"
+                        min="1"
+                        value={reviewAddForm.cantidad}
+                        disabled={reviewSaving}
+                        onChange={(e) => setReviewAddForm((f) => ({ ...f, cantidad: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <button type="button" style={{ ...S.btn, width: '100%' }} disabled={reviewSaving} onClick={agregarItemRevision}>
+                        Agregar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <div style={S.label}>Motivo de rechazo (opcional)</div>
+                  <textarea
+                    style={{ ...S.input, minHeight: 60 }}
+                    value={reviewMotivo}
+                    disabled={reviewSaving}
+                    onChange={(e) => setReviewMotivo(e.target.value)}
+                    placeholder="Ej: stock insuficiente en el origen, corregir destino..."
+                  />
+                </div>
+
+                <div className="button-row" style={{ justifyContent: 'flex-end' }}>
+                  <button type="button" style={S.btn} disabled={reviewSaving} onClick={guardarCorrecciones}>
+                    Guardar correcciones
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...S.btn, borderColor: 'var(--danger)', color: 'var(--danger)' }}
+                    disabled={reviewSaving}
+                    onClick={rechazarRevision}
+                  >
+                    Rechazar
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...S.btnPrimary, opacity: reviewSaving ? 0.7 : 1 }}
+                    disabled={reviewSaving}
+                    onClick={autorizarRevision}
+                  >
+                    {reviewSaving ? 'Procesando...' : 'Autorizar y transferir'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

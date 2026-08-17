@@ -1,4 +1,4 @@
-export default function ColumnPickerModal({ open, title, columns, selectedIds, onToggle, onClose, onSelectAll }) {
+export default function ColumnPickerModal({ open, title, columns, selectedIds, onToggle, onClose, onSelectAll, hint }) {
   if (!open) return null
 
   return (
@@ -31,7 +31,7 @@ export default function ColumnPickerModal({ open, title, columns, selectedIds, o
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 16, color: 'var(--text-strong)' }}>{title}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>Marca qué columnas mostrar en la vista detallada.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>{hint || 'Marca qué columnas mostrar en la vista detallada.'}</div>
           </div>
           <button type="button" onClick={onClose} style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', fontSize: 12 }}>
             Cerrar

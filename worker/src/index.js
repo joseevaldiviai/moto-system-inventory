@@ -25,6 +25,15 @@ function normalizeNullableText(value) {
   return normalized || null;
 }
 
+function normalizeDateOrNull(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error('Fecha invalida (use YYYY-MM-DD)');
+  const date = new Date(`${text}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw new Error('Fecha invalida (use YYYY-MM-DD)');
+  return text;
+}
+
 function isSupervisorRole(profile) {
   return profile?.rol === ROLES.SUPERVISOR;
 }
@@ -235,16 +244,12 @@ async function resolveInventoryScope({ admin, profile, requestedScope, requested
   }
 
   if (requestedScope === 'central') {
-    if (!isSupervisorRole(profile)) throw new Error('Solo Supervisor puede ver el almacen central');
     const central = await getCentralPoint(admin);
     return { scope: 'central', pointId: central.id, point: central };
   }
 
   if (requestedScope === 'point') {
     if (!requestedPointId) throw new Error('punto_venta_id requerido');
-    if (!isSupervisorRole(profile) && Number(profile.punto_venta_id) !== Number(requestedPointId)) {
-      throw new Error('No autorizado para consultar ese punto de venta');
-    }
     const point = await getPointById(admin, requestedPointId);
     return { scope: point.tipo === POINT_TYPES.CENTRAL ? 'central' : 'point', pointId: point.id, point };
   }
@@ -708,7 +713,12 @@ async function handleUsersUpdate(request, env, id) {
 }
 
 async function handlePointsList(request, env) {
-  const { admin } = await requireSupervisor(request, env);
+  const { admin, profile } = await requireAuth(request, env);
+  try {
+    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR], 'No autorizado para consultar puntos de venta');
+  } catch (error) {
+    return fail(error.message, 403);
+  }
   const { data, error } = await admin
     .from('puntos_venta')
     .select('id, nombre, codigo, tipo, activo, creado_en')
@@ -805,7 +815,7 @@ async function handleBrandsDelete(request, env, id) {
 async function handleInventoryList(request, env, kind) {
   const { admin, profile } = await requireAuth(request, env);
   try {
-    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR], 'No autorizado para consultar inventario');
+    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR, ROLES.CAJERO], 'No autorizado para consultar inventario');
   } catch (error) {
     return fail(error.message, 403);
   }
@@ -822,7 +832,7 @@ async function handleInventoryList(request, env, kind) {
       requestedScope,
       requestedPointId,
     });
-    const data = await listInventoryRows({
+    let data = await listInventoryRows({
       admin,
       kind,
       buscar,
@@ -830,6 +840,9 @@ async function handleInventoryList(request, env, kind) {
       scope: inventoryScope.scope,
       pointId: inventoryScope.pointId,
     });
+    if (!isSupervisorRole(profile)) {
+      data = (data || []).map(({ costo, precio, ...row }) => row);
+    }
     return json({
       ok: true,
       data,
@@ -877,6 +890,7 @@ async function handleInventoryCreate(request, env, kind) {
     ...stocks,
     marca_id,
     marca: marca_nombre,
+    fecha_recepcion: normalizeDateOrNull(data.fecha_recepcion),
   };
 
   if (kind === 'accesorios') {
@@ -968,6 +982,10 @@ async function handleInventoryUpdate(request, env, kind, id) {
     Object.assign(patch, normalizeStocks(data));
   }
 
+  if (data.fecha_recepcion !== undefined) {
+    patch.fecha_recepcion = normalizeDateOrNull(data.fecha_recepcion);
+  }
+
   const { error } = await admin.from(kind).update(patch).eq('id', id);
   if (error) return fail(error.message);
   return json({ ok: true });
@@ -980,10 +998,92 @@ async function handleInventoryDelete(request, env, kind, id) {
   return json({ ok: true });
 }
 
+async function handleAvailability(request, env, kind) {
+  const { admin } = await requireAuth(request, env);
+  if (!PRODUCT_TABLES.includes(kind)) return fail('Tipo de inventario no soportado', 400);
+  const config = getInventoryConfig(kind);
+
+  const url = new URL(request.url);
+  const rawIds = url.searchParams.get('ids') || '';
+  const ids = [...new Set(rawIds.split(',').map((value) => Number(value.trim())).filter((value) => Number.isInteger(value) && value > 0))];
+  if (!ids.length) return fail('ids invalido');
+
+  const { data: products, error: productsError } = await admin
+    .from(kind)
+    .select('id, cantidad_libre, cantidad_reservada, cantidad_vendida')
+    .in('id', ids)
+    .eq('activo', true);
+  if (productsError) return fail(productsError.message, 500);
+
+  const locations = new Map();
+  const foundIds = (products || []).map((product) => Number(product.id));
+
+  for (const product of products || []) {
+    const libre = Number(product.cantidad_libre || 0);
+    const reservada = Number(product.cantidad_reservada || 0);
+    const vendida = Number(product.cantidad_vendida || 0);
+    if (libre === 0 && reservada === 0 && vendida === 0) continue;
+    const current = locations.get('central') || {
+      punto_venta_id: null,
+      punto_venta_nombre: 'Almacen Central',
+      punto_venta_tipo: POINT_TYPES.CENTRAL,
+      cantidad_libre: 0,
+      cantidad_reservada: 0,
+      cantidad_vendida: 0,
+    };
+    current.cantidad_libre += libre;
+    current.cantidad_reservada += reservada;
+    current.cantidad_vendida += vendida;
+    locations.set('central', current);
+  }
+
+  if (foundIds.length) {
+    const { data: stocks, error: stockError } = await admin
+      .from('inventario_puntos_venta')
+      .select('punto_venta_id, producto_id, cantidad_libre, cantidad_reservada, cantidad_vendida')
+      .eq('producto_tipo', kind)
+      .in('producto_id', foundIds);
+    if (stockError) return fail(stockError.message, 500);
+
+    const pointIds = [...new Set((stocks || []).map((stock) => Number(stock.punto_venta_id)).filter(Boolean))];
+    const pointsMap = new Map();
+    if (pointIds.length) {
+      const { data: points, error: pointsError } = await admin.from('puntos_venta').select('id, nombre, tipo').in('id', pointIds);
+      if (pointsError) return fail(pointsError.message, 500);
+      for (const point of points || []) pointsMap.set(Number(point.id), point);
+    }
+
+    for (const stock of stocks || []) {
+      const point = pointsMap.get(Number(stock.punto_venta_id));
+      const key = `p:${Number(stock.punto_venta_id)}`;
+      const current = locations.get(key) || {
+        punto_venta_id: Number(stock.punto_venta_id),
+        punto_venta_nombre: point?.nombre || 'Punto de venta',
+        punto_venta_tipo: point?.tipo || POINT_TYPES.POS,
+        cantidad_libre: 0,
+        cantidad_reservada: 0,
+        cantidad_vendida: 0,
+      };
+      current.cantidad_libre += Number(stock.cantidad_libre || 0);
+      current.cantidad_reservada += Number(stock.cantidad_reservada || 0);
+      current.cantidad_vendida += Number(stock.cantidad_vendida || 0);
+      locations.set(key, current);
+    }
+  }
+
+  const data = [...locations.values()].sort((a, b) => {
+    if (a.punto_venta_id === null) return -1;
+    if (b.punto_venta_id === null) return 1;
+    return String(a.punto_venta_nombre).localeCompare(String(b.punto_venta_nombre), 'es');
+  });
+
+  return json({ ok: true, data });
+}
+
 async function handleInventoryReport(request, env) {
   const { admin, profile } = await requireAuth(request, env);
   try {
-    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR], 'No autorizado para consultar inventario');
+    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR, ROLES.CAJERO], 'No autorizado para consultar inventario');
   } catch (error) {
     return fail(error.message, 403);
   }
@@ -994,10 +1094,11 @@ async function handleInventoryReport(request, env) {
     requestedScope: url.searchParams.get('scope'),
     requestedPointId: url.searchParams.get('punto_venta_id'),
   });
+  const isSupervisor = isSupervisorRole(profile);
   const result = {};
 
   for (const table of PRODUCT_TABLES) {
-    const data = await listInventoryRows({
+    const rows = await listInventoryRows({
       admin,
       kind: table,
       buscar: null,
@@ -1005,13 +1106,17 @@ async function handleInventoryReport(request, env) {
       scope: inventoryScope.scope,
       pointId: inventoryScope.pointId,
     });
+    const data = isSupervisor
+      ? (rows || [])
+      : (rows || []).map(({ costo, precio, ...row }) => row);
+    const unitValue = (row) => Number(isSupervisor ? (row.costo ?? row.precio ?? 0) : (row.precio_venta ?? row.precio_final ?? 0));
 
     result[table] = {
-      items: data || [],
-      total_unidades: (data || []).reduce((sum, row) => sum + Number(row.cantidad_libre || 0), 0),
-      total_reservadas: (data || []).reduce((sum, row) => sum + Number(row.cantidad_reservada || 0), 0),
-      total_vendidas: (data || []).reduce((sum, row) => sum + Number(row.cantidad_vendida || 0), 0),
-      valor_total: (data || []).reduce((sum, row) => sum + Number(row.costo ?? row.precio ?? 0) * Number(row.cantidad_libre || 0), 0),
+      items: data,
+      total_unidades: data.reduce((sum, row) => sum + Number(row.cantidad_libre || 0), 0),
+      total_reservadas: data.reduce((sum, row) => sum + Number(row.cantidad_reservada || 0), 0),
+      total_vendidas: data.reduce((sum, row) => sum + Number(row.cantidad_vendida || 0), 0),
+      valor_total: data.reduce((sum, row) => sum + unitValue(row) * Number(row.cantidad_libre || 0), 0),
     };
   }
 
@@ -1055,8 +1160,25 @@ async function handleInventoryTransfer(request, env) {
 }
 
 async function handleAssignmentsCreate(request, env) {
-  const { admin, profile } = await requireSupervisor(request, env);
+  const { admin, profile } = await requireAuth(request, env);
+  try {
+    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR], 'No autorizado para crear asignaciones');
+  } catch (error) {
+    return fail(error.message, 403);
+  }
   const { data } = await readJson(request);
+
+  if (profile.rol !== ROLES.SUPERVISOR) {
+    const password = data?.autorizacion_password;
+    if (!password) return fail('Contrasena de autorizacion requerida');
+    const publicClient = createPublicClient(env);
+    const { error: passwordError } = await publicClient.auth.signInWithPassword({
+      email: profile.email,
+      password,
+    });
+    if (passwordError) return fail('Contrasena de autorizacion incorrecta', 401);
+  }
+
   const originId = Number(data?.origen_punto_venta_id);
   const destinationId = Number(data?.destino_punto_venta_id);
   const items = data?.items;
@@ -1212,7 +1334,7 @@ async function handleAssignmentsGet(request, env, code) {
 
   const { data: asignacion, error: asignacionError } = await admin
     .from('asignaciones_inventario')
-    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_en, aplicado_en')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_por, creado_en, aplicado_en, autorizada_por, autorizada_en, rechazada_por, motivo_rechazo')
     .eq('codigo', codigo)
     .single();
   if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
@@ -1220,6 +1342,7 @@ async function handleAssignmentsGet(request, env, code) {
   if (
     !isSupervisorRole(profile)
     && Number(profile.punto_venta_id) !== Number(asignacion.destino_punto_venta_id)
+    && String(asignacion.creado_por) !== String(profile.id)
   ) {
     return fail('No autorizado para ver este ticket', 403);
   }
@@ -1246,8 +1369,13 @@ async function handleAssignmentsGet(request, env, code) {
     data: {
       codigo: asignacion.codigo,
       estado: asignacion.estado,
+      creado_por: asignacion.creado_por,
       creado_en: asignacion.creado_en,
       aplicado_en: asignacion.aplicado_en,
+      autorizada_por: asignacion.autorizada_por,
+      autorizada_en: asignacion.autorizada_en,
+      rechazada_por: asignacion.rechazada_por,
+      motivo_rechazo: asignacion.motivo_rechazo,
       origen_punto_venta_id: asignacion.origen_punto_venta_id,
       destino_punto_venta_id: asignacion.destino_punto_venta_id,
       origen_nombre: origin?.tipo === POINT_TYPES.CENTRAL ? 'Almacen Central' : (origin?.nombre || 'Origen'),
@@ -1261,15 +1389,22 @@ async function handleAssignmentsGet(request, env, code) {
 }
 
 async function handleAssignmentsList(request, env) {
-  const { admin } = await requireSupervisor(request, env);
+  const { admin, profile } = await requireAuth(request, env);
+  try {
+    ensureAllowedRole(profile, [ROLES.SUPERVISOR, ROLES.VENDEDOR], 'No autorizado para consultar asignaciones');
+  } catch (error) {
+    return fail(error.message, 403);
+  }
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || 50), 1), 200);
 
-  const { data: rows, error } = await admin
+  let query = admin
     .from('asignaciones_inventario')
-    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_en, aplicado_en')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado, creado_en, aplicado_en, autorizada_en, motivo_rechazo')
     .order('creado_en', { ascending: false })
     .limit(limit);
+  if (profile.rol !== ROLES.SUPERVISOR) query = query.eq('creado_por', profile.id);
+  const { data: rows, error } = await query;
   if (error) return fail(error.message, 500);
   if (!rows?.length) return json({ ok: true, data: [] });
 
@@ -1368,6 +1503,145 @@ async function handleAssignmentsApply(request, env, code) {
   return json({ ok: true });
 }
 
+async function handleAssignmentsUpdate(request, env, code) {
+  const { admin } = await requireSupervisor(request, env);
+  const codigo = decodeURIComponent(code || '').trim();
+  if (!codigo) return fail('Codigo requerido');
+  const { data } = await readJson(request);
+
+  const { data: asignacion, error: asignacionError } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, origen_punto_venta_id, estado')
+    .eq('codigo', codigo)
+    .single();
+  if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
+  if (asignacion.estado !== 'PENDIENTE') return fail('Solo se pueden corregir asignaciones pendientes');
+
+  const patch = {};
+  if (data.destino_punto_venta_id !== undefined) {
+    const destinationId = Number(data.destino_punto_venta_id);
+    if (!Number.isFinite(destinationId) || destinationId <= 0) return fail('Destino invalido');
+    if (destinationId === Number(asignacion.origen_punto_venta_id)) return fail('El destino no puede ser igual al origen');
+    const destinationPoint = await getPointById(admin, destinationId);
+    if (!destinationPoint.activo) return fail('Ubicacion destino inactiva');
+    patch.destino_punto_venta_id = destinationId;
+  }
+
+  if (Array.isArray(data.items)) {
+    if (data.items.length === 0) return fail('Debe incluir al menos un item');
+    const payloadItems = data.items.map((it) => ({
+      kind: it.kind,
+      product_id: Number(it.product_id),
+      cantidad: Number(it.cantidad),
+    }));
+    if (payloadItems.some((it) => !PRODUCT_TABLES.includes(it.kind))) return fail('Tipo de inventario no soportado');
+    if (payloadItems.some((it) => !Number.isFinite(it.product_id) || it.product_id <= 0)) return fail('Producto invalido');
+    if (payloadItems.some((it) => !Number.isFinite(it.cantidad) || it.cantidad <= 0)) return fail('Cantidad invalida');
+
+    const { error: deleteError } = await admin
+      .from('asignacion_inventario_items')
+      .delete()
+      .eq('asignacion_id', asignacion.id);
+    if (deleteError) return fail(deleteError.message, 500);
+
+    const rows = payloadItems.map((it) => ({
+      asignacion_id: asignacion.id,
+      producto_tipo: it.kind,
+      producto_id: it.product_id,
+      cantidad: it.cantidad,
+    }));
+    const { error: insertError } = await admin.from('asignacion_inventario_items').insert(rows);
+    if (insertError) return fail(insertError.message, 500);
+  }
+
+  if (Object.keys(patch).length) {
+    const { error } = await admin.from('asignaciones_inventario').update(patch).eq('id', asignacion.id);
+    if (error) return fail(error.message, 500);
+  }
+
+  return json({ ok: true });
+}
+
+async function handleAssignmentsAuthorize(request, env, code) {
+  const { admin, profile } = await requireSupervisor(request, env);
+  const codigo = decodeURIComponent(code || '').trim();
+  if (!codigo) return fail('Codigo requerido');
+
+  const { data: asignacion, error: asignacionError } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, origen_punto_venta_id, destino_punto_venta_id, estado')
+    .eq('codigo', codigo)
+    .single();
+  if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
+  if (asignacion.estado !== 'PENDIENTE') return fail('La asignacion ya fue autorizada, aplicada o rechazada');
+
+  const { data: items, error: itemsError } = await admin
+    .from('asignacion_inventario_items')
+    .select('id, producto_tipo, producto_id, cantidad')
+    .eq('asignacion_id', asignacion.id)
+    .order('id');
+  if (itemsError) return fail(itemsError.message, 500);
+  if (!items?.length) return fail('Asignacion sin items', 400);
+
+  try {
+    for (const item of items) {
+      await transferInventoryStock({
+        admin,
+        kind: item.producto_tipo,
+        productId: item.producto_id,
+        sourcePointId: asignacion.origen_punto_venta_id,
+        destinationPointId: asignacion.destino_punto_venta_id,
+        quantity: item.cantidad,
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes('no encontrado') ? 404 : 400;
+    return fail(message, status);
+  }
+
+  const { error: updateError } = await admin
+    .from('asignaciones_inventario')
+    .update({
+      estado: 'AUTORIZADA',
+      autorizada_por: profile.id,
+      autorizada_en: new Date().toISOString(),
+    })
+    .eq('id', asignacion.id)
+    .eq('estado', 'PENDIENTE');
+  if (updateError) return fail(updateError.message, 500);
+
+  return json({ ok: true });
+}
+
+async function handleAssignmentsReject(request, env, code) {
+  const { admin, profile } = await requireSupervisor(request, env);
+  const codigo = decodeURIComponent(code || '').trim();
+  if (!codigo) return fail('Codigo requerido');
+  const { data } = await readJson(request);
+
+  const { data: asignacion, error: asignacionError } = await admin
+    .from('asignaciones_inventario')
+    .select('id, codigo, estado')
+    .eq('codigo', codigo)
+    .single();
+  if (asignacionError || !asignacion) return fail('Codigo no encontrado', 404);
+  if (asignacion.estado !== 'PENDIENTE') return fail('La asignacion ya fue autorizada, aplicada o rechazada');
+
+  const { error: updateError } = await admin
+    .from('asignaciones_inventario')
+    .update({
+      estado: 'RECHAZADA',
+      rechazada_por: profile.id,
+      motivo_rechazo: data?.motivo ?? null,
+    })
+    .eq('id', asignacion.id)
+    .eq('estado', 'PENDIENTE');
+  if (updateError) return fail(updateError.message, 500);
+
+  return json({ ok: true });
+}
+
 async function upsertMotoFromCsv(admin, data) {
   const { data: existing } = await admin.from('motos').select('id').eq('chasis', data.chasis).maybeSingle();
 
@@ -1384,6 +1658,7 @@ async function upsertMotoFromCsv(admin, data) {
       precio_venta: data.precio_venta,
       descuento_maximo_pct: data.descuento_maximo_pct,
       cantidad_libre: data.cantidad_libre,
+      ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
       activo: true,
     }).eq('id', existing.id);
     if (error) throw new Error(error.message);
@@ -1403,6 +1678,7 @@ async function upsertMotoFromCsv(admin, data) {
     precio_venta: data.precio_venta,
     descuento_maximo_pct: data.descuento_maximo_pct,
     cantidad_libre: data.cantidad_libre,
+    ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
     cantidad_reservada: 0,
     cantidad_vendida: 0,
   });
@@ -1426,6 +1702,7 @@ async function upsertMotoEFromCsv(admin, data) {
       precio_venta: data.precio_venta,
       descuento_maximo_pct: data.descuento_maximo_pct,
       cantidad_libre: data.cantidad_libre,
+      ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
       activo: true,
     }).eq('id', existing.id);
     if (error) throw new Error(error.message);
@@ -1445,6 +1722,7 @@ async function upsertMotoEFromCsv(admin, data) {
     precio_venta: data.precio_venta,
     descuento_maximo_pct: data.descuento_maximo_pct,
     cantidad_libre: data.cantidad_libre,
+    ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
     cantidad_reservada: 0,
     cantidad_vendida: 0,
   });
@@ -1480,6 +1758,7 @@ async function upsertAccesorioFromCsv(admin, data) {
       precio_final: data.precio_final,
       descuento_maximo_pct: data.descuento_maximo_pct,
       cantidad_libre: Number(existing.cantidad_libre || 0) + Number(data.cantidad_libre || 0),
+      ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
       activo: true,
     }).eq('id', existing.id);
     if (error) throw new Error(error.message);
@@ -1497,6 +1776,7 @@ async function upsertAccesorioFromCsv(admin, data) {
     precio_final: data.precio_final,
     descuento_maximo_pct: data.descuento_maximo_pct,
     cantidad_libre: data.cantidad_libre,
+    ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
     cantidad_reservada: 0,
     cantidad_vendida: 0,
   });
@@ -1525,6 +1805,7 @@ async function upsertRepuestoFromCsv(admin, data) {
       precio_final: data.precio_final,
       descuento_maximo_pct: data.descuento_maximo_pct,
       cantidad_libre: data.cantidad_libre,
+      ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
       activo: true,
     }).eq('id', existing.id);
     if (error) throw new Error(error.message);
@@ -1540,6 +1821,7 @@ async function upsertRepuestoFromCsv(admin, data) {
     precio_final: data.precio_final,
     descuento_maximo_pct: data.descuento_maximo_pct,
     cantidad_libre: data.cantidad_libre,
+    ...(data.fecha_recepcion !== undefined ? { fecha_recepcion: data.fecha_recepcion } : {}),
     cantidad_reservada: 0,
     cantidad_vendida: 0,
   });
@@ -1557,6 +1839,7 @@ async function importInventoryCsv(request, env, kind) {
 
   if (kind === 'motos') {
     requireColumns(header, ['marca', 'ano', 'tipo', 'color', 'chasis', 'cilindrada', 'motor', 'costo', 'precio_venta', 'descuento_maximo_pct', 'cantidad_libre']);
+    const includeFechaRecepcion = header.includes('fecha_recepcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, 'motos', true);
@@ -1573,9 +1856,11 @@ async function importInventoryCsv(request, env, kind) {
         precio_venta: requiredNumber(row.precio_venta, 'precio_venta'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
         cantidad_libre: numberOrZero(row.cantidad_libre),
+        fecha_recepcion: includeFechaRecepcion ? normalizeDateOrNull(row.fecha_recepcion) : undefined,
       };
 
       if (!data.marca || !data.ano || !data.chasis) throw new Error(`Fila ${index + 2}: campos requeridos faltantes`);
+      if (!data.color) throw new Error(`Fila ${index + 2}: color requerido`);
       validatePricing(data);
       const operation = await upsertMotoFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
@@ -1585,6 +1870,7 @@ async function importInventoryCsv(request, env, kind) {
 
   if (kind === 'motos_e') {
     requireColumns(header, ['marca', 'ano', 'tipo', 'color', 'chasis', 'potencia', 'motor', 'costo', 'precio_venta', 'descuento_maximo_pct', 'cantidad_libre']);
+    const includeFechaRecepcion = header.includes('fecha_recepcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, 'motos_e', true);
@@ -1601,9 +1887,11 @@ async function importInventoryCsv(request, env, kind) {
         precio_venta: requiredNumber(row.precio_venta, 'precio_venta'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
         cantidad_libre: numberOrZero(row.cantidad_libre),
+        fecha_recepcion: includeFechaRecepcion ? normalizeDateOrNull(row.fecha_recepcion) : undefined,
       };
 
       if (!data.marca || !data.ano || !data.chasis) throw new Error(`Fila ${index + 2}: campos requeridos faltantes`);
+      if (!data.color) throw new Error(`Fila ${index + 2}: color requerido`);
       validatePricing(data);
       const operation = await upsertMotoEFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
@@ -1614,6 +1902,7 @@ async function importInventoryCsv(request, env, kind) {
   if (kind === 'accesorios') {
     requireColumns(header, ['marca', 'producto', 'color', 'talla', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
     if (!header.includes('tipo') && !header.includes('codigo')) throw new Error('Columna requerida faltante: tipo o codigo');
+    const includeFechaRecepcion = header.includes('fecha_recepcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, 'accesorios', false);
@@ -1628,9 +1917,11 @@ async function importInventoryCsv(request, env, kind) {
         precio_final: requiredNumber(row.precio_final, 'precio_final'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
         cantidad_libre: numberOrZero(row.cantidad_libre),
+        fecha_recepcion: includeFechaRecepcion ? normalizeDateOrNull(row.fecha_recepcion) : undefined,
       };
 
       if (!data.producto || !data.tipo) throw new Error(`Fila ${index + 2}: producto y tipo requeridos`);
+      if (!data.color) throw new Error(`Fila ${index + 2}: color requerido`);
       validatePricing(data);
       const operation = await upsertAccesorioFromCsv(admin, data);
       if (operation === 'inserted') inserted += 1;
@@ -1641,6 +1932,7 @@ async function importInventoryCsv(request, env, kind) {
   if (kind === 'repuestos') {
     requireColumns(header, ['marca', 'producto', 'precio', 'precio_final', 'descuento_maximo_pct', 'cantidad_libre']);
     if (!header.includes('tipo') && !header.includes('descripcion')) throw new Error('Columna requerida faltante: tipo o descripcion');
+    const includeFechaRecepcion = header.includes('fecha_recepcion');
     for (let index = 0; index < rows.length; index += 1) {
       const row = rowObject(header, rows[index]);
       const { marca_id, marca_nombre } = await resolveMarca(admin, { marca: row.marca }, 'repuestos', false);
@@ -1653,6 +1945,7 @@ async function importInventoryCsv(request, env, kind) {
         precio_final: requiredNumber(row.precio_final, 'precio_final'),
         descuento_maximo_pct: requiredNumber(row.descuento_maximo_pct, 'descuento_maximo_pct'),
         cantidad_libre: numberOrZero(row.cantidad_libre),
+        fecha_recepcion: includeFechaRecepcion ? normalizeDateOrNull(row.fecha_recepcion) : undefined,
       };
 
       if (!data.producto || !data.tipo) throw new Error(`Fila ${index + 2}: producto y tipo requeridos`);
@@ -1692,7 +1985,12 @@ async function handleQuotesList(request, env) {
       .lte('fecha_creacion', `${fecha}T23:59:59`);
   }
   if (numero) query = query.ilike('codigo', `%${numero}%`);
-  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
+  if (profile.rol === 'CAJERO') {
+    if (!profile.punto_venta_id) return json({ ok: true, data: [] });
+    query = query.eq('punto_venta_id', profile.punto_venta_id);
+  } else if (profile.rol !== 'SUPERVISOR') {
+    query = query.eq('vendedor_id', profile.id);
+  }
 
   const { data, error } = await query;
   if (error) return fail(error.message, 500);
@@ -1724,7 +2022,12 @@ async function handleQuotesGet(request, env, id) {
     .from('proformas')
     .select('id, codigo, cliente_nombre, cliente_ci_nit, cliente_celular, fecha_creacion, fecha_expiracion, subtotal, total_descuentos, total, estado, notas, vendedor_id, punto_venta_id, user_profiles!proformas_vendedor_id_fkey(nombre)')
     .eq('id', id);
-  if (profile.rol !== 'SUPERVISOR') query = query.eq('vendedor_id', profile.id);
+  if (profile.rol === 'CAJERO') {
+    if (!profile.punto_venta_id) return fail('Proforma no encontrada', 404);
+    query = query.eq('punto_venta_id', profile.punto_venta_id);
+  } else if (profile.rol !== 'SUPERVISOR') {
+    query = query.eq('vendedor_id', profile.id);
+  }
   const { data: proforma, error: proformaError } = await query.single();
 
   if (proformaError || !proforma) return fail('Proforma no encontrada', 404);
@@ -2572,12 +2875,19 @@ export default {
       if (path.startsWith('/products/repuestos/') && request.method === 'PATCH') return withCors(await handleInventoryUpdate(request, env, 'repuestos', path.split('/')[3]));
       if (path.startsWith('/products/repuestos/') && request.method === 'DELETE') return withCors(await handleInventoryDelete(request, env, 'repuestos', path.split('/')[3]));
 
+      if (path.startsWith('/products/') && path.endsWith('/availability') && request.method === 'GET') {
+        return withCors(await handleAvailability(request, env, path.split('/')[2]));
+      }
+
       if (path === '/inventory/transfers' && request.method === 'POST') return withCors(await handleInventoryTransfer(request, env));
 
       if (path === '/assignments' && request.method === 'GET') return withCors(await handleAssignmentsList(request, env));
       if (path === '/assignments' && request.method === 'POST') return withCors(await handleAssignmentsCreate(request, env));
       if (path.startsWith('/assignments/') && request.method === 'GET' && !path.endsWith('/apply')) return withCors(await handleAssignmentsGet(request, env, path.split('/')[2]));
       if (path.startsWith('/assignments/') && request.method === 'POST' && path.endsWith('/apply')) return withCors(await handleAssignmentsApply(request, env, path.split('/')[2]));
+      if (path.startsWith('/assignments/') && request.method === 'POST' && path.endsWith('/authorize')) return withCors(await handleAssignmentsAuthorize(request, env, path.split('/')[2]));
+      if (path.startsWith('/assignments/') && request.method === 'POST' && path.endsWith('/reject')) return withCors(await handleAssignmentsReject(request, env, path.split('/')[2]));
+      if (path.startsWith('/assignments/') && request.method === 'PATCH') return withCors(await handleAssignmentsUpdate(request, env, path.split('/')[2]));
 
       if (path === '/quotes' && request.method === 'GET') return withCors(await handleQuotesList(request, env));
       if (path === '/quotes' && request.method === 'POST') return withCors(await handleQuotesCreate(request, env));

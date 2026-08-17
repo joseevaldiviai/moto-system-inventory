@@ -298,6 +298,9 @@ export const api = {
   },
   obtenerAsignacionProductos: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}`, { token }),
   aplicarAsignacionProductos: ({ token, codigo, data = {} }) => request(`/assignments/${encodeURIComponent(codigo)}/apply`, { method: 'POST', token, body: data }),
+  corregirAsignacion: ({ token, codigo, data }) => request(`/assignments/${encodeURIComponent(codigo)}`, { method: 'PATCH', token, body: { data } }),
+  autorizarAsignacion: ({ token, codigo }) => request(`/assignments/${encodeURIComponent(codigo)}/authorize`, { method: 'POST', token }),
+  rechazarAsignacion: ({ token, codigo, data = {} }) => request(`/assignments/${encodeURIComponent(codigo)}/reject`, { method: 'POST', token, body: data }),
   crearRepuesto: ({ token, data }) => request('/products/repuestos', { method: 'POST', token, body: { data } }),
   actualizarRepuesto: ({ token, id, data }) => request(`/products/repuestos/${id}`, { method: 'PATCH', token, body: { data } }),
   eliminarRepuesto: ({ token, id }) => request(`/products/repuestos/${id}`, { method: 'DELETE', token }),
@@ -305,6 +308,11 @@ export const api = {
     request('/products/repuestos/import', { method: 'POST', token, body: { csvText } }),
   exportarRepuestosArchivo: ({ token }) => safeDownload('/exports/inventory/repuestos', { token, filename: 'repuestos.csv' }),
   exportarProductosArchivo: ({ token }) => safeDownload('/exports/inventory/productos', { token, filename: 'productos.csv' }),
+  disponibilidadProducto: ({ token, kind, ids }) => {
+    const query = new URLSearchParams();
+    query.set('ids', (Array.isArray(ids) ? ids : [ids]).join(','));
+    return request(`/products/${kind}/availability?${query.toString()}`, { token });
+  },
 
   listarTramites: ({ token, estado } = {}) => {
     const query = new URLSearchParams();

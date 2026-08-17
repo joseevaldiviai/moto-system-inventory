@@ -4,7 +4,7 @@ const textValue = (value) => {
 }
 
 export function getProductGridColumns(kind, options = {}) {
-  const { formatBs = (value) => String(value ?? '-'), getWarehouseLabel, includeWarehouse = false, renderAction, actionLabel = 'Acciones' } = options
+  const { formatBs = (value) => String(value ?? '-'), getWarehouseLabel, includeWarehouse = false, showCost = true, renderAction, actionLabel = 'Acciones' } = options
   const warehouseColumns = includeWarehouse
     ? [{
         id: 'punto_venta',
@@ -27,7 +27,7 @@ export function getProductGridColumns(kind, options = {}) {
   ]
 
   const moneyColumns = (costField, saleField, saleLabel) => ([
-    { id: costField, label: 'Costo', cell: (row) => formatBs(row?.[costField]) },
+    ...(showCost ? [{ id: costField, label: 'Costo', cell: (row) => formatBs(row?.[costField]) }] : []),
     { id: saleField, label: saleLabel, cell: (row) => formatBs(row?.[saleField]) },
   ])
 
@@ -40,6 +40,7 @@ export function getProductGridColumns(kind, options = {}) {
       { id: 'chasis', label: 'Chasis', cell: (row) => textValue(row?.chasis) },
       { id: 'cilindrada', label: 'Cilindrada', cell: (row) => textValue(row?.cilindrada) },
       { id: 'motor', label: 'Motor', cell: (row) => textValue(row?.motor) },
+      { id: 'fecha_recepcion', label: 'F. Recepción', cell: (row) => textValue(row?.fecha_recepcion) },
       ...warehouseColumns,
       ...stockColumns,
       ...moneyColumns('costo', 'precio_venta', 'Precio venta'),
@@ -57,6 +58,7 @@ export function getProductGridColumns(kind, options = {}) {
       { id: 'chasis', label: 'Chasis', cell: (row) => textValue(row?.chasis) },
       { id: 'potencia', label: 'Potencia', cell: (row) => textValue(row?.potencia) },
       { id: 'motor', label: 'Motor', cell: (row) => textValue(row?.motor) },
+      { id: 'fecha_recepcion', label: 'F. Recepción', cell: (row) => textValue(row?.fecha_recepcion) },
       ...warehouseColumns,
       ...stockColumns,
       ...moneyColumns('costo', 'precio_venta', 'Precio venta'),
@@ -72,6 +74,7 @@ export function getProductGridColumns(kind, options = {}) {
       { id: 'tipo', label: 'Codigo', cell: (row) => textValue(row?.tipo) },
       { id: 'color', label: 'Color', cell: (row) => textValue(row?.color) },
       { id: 'talla', label: 'Talla', cell: (row) => textValue(row?.talla) },
+      { id: 'fecha_recepcion', label: 'F. Recepción', cell: (row) => textValue(row?.fecha_recepcion) },
       ...warehouseColumns,
       ...stockColumns,
       ...moneyColumns('precio', 'precio_final', 'Precio'),
@@ -84,6 +87,7 @@ export function getProductGridColumns(kind, options = {}) {
     { id: 'marca', label: 'Marca', cell: (row) => textValue(row?.marca) },
     { id: 'producto', label: 'Producto', cell: (row) => textValue(row?.producto) },
     { id: 'tipo', label: 'Descripcion', cell: (row) => textValue(row?.tipo) },
+    { id: 'fecha_recepcion', label: 'F. Recepción', cell: (row) => textValue(row?.fecha_recepcion) },
     ...warehouseColumns,
     ...stockColumns,
     ...moneyColumns('precio', 'precio_final', 'Precio'),

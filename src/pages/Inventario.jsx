@@ -6,14 +6,60 @@ import ProductGridTable from '../components/ProductGridTable'
 import ColumnPickerModal from '../components/ColumnPickerModal'
 import { getProductGridColumns } from '../lib/productGridColumns'
 
-const INVENTORY_GRID_PREFS_KEY = 'inventory:grid:detail-columns'
-const INVENTORY_POINT_GRID_PREFS_KEY = 'inventory:point-grid:detail-columns'
+const INVENTORY_GRID_PREFS_KEY = 'inventory:grid:detail-columns:v2'
+const INVENTORY_POINT_GRID_PREFS_KEY = 'inventory:point-grid:detail-columns:v2'
 const BRAND_GROUP_OPTIONS = [
   { value: 'motos', label: 'Motos' },
   { value: 'motos_e', label: 'Motos-E' },
   { value: 'accesorios', label: 'Accesorios' },
   { value: 'repuestos', label: 'Repuestos' },
 ]
+
+// Mapea el id de cada columna del grid al campo del producto usado como criterio de agrupacion/filtro.
+const GROUP_FIELD_BY_COLUMN = (currentTab) => {
+  if (currentTab === 'motos' || currentTab === 'motos_e') {
+    return {
+      marca: 'marca',
+      tipo: 'tipo',
+      ano: 'ano',
+      color: 'color',
+      chasis: 'chasis',
+      cilindrada: 'cilindrada',
+      motor: 'motor',
+      costo: 'costo',
+      fecha_recepcion: 'fecha_recepcion',
+      ...(currentTab === 'motos_e' ? { potencia: 'potencia' } : {}),
+      punto_venta: 'punto_venta',
+    }
+  }
+  return {
+    marca: 'marca',
+    producto: 'producto',
+    tipo: 'tipo',
+    color: 'color',
+    talla: 'talla',
+    precio: 'precio',
+    fecha_recepcion: 'fecha_recepcion',
+    punto_venta: 'punto_venta',
+  }
+}
+
+// Agrupacion fija de la vista simple (sin selector de columnas), equivalente a la original.
+const SIMPLE_GROUP_COLUMNS = {
+  motos: ['marca', 'tipo', 'costo', 'cilindrada', 'punto_venta'],
+  motos_e: ['marca', 'tipo', 'costo', 'cilindrada', 'potencia', 'punto_venta'],
+  accesorios: ['marca', 'producto', 'tipo', 'talla', 'precio', 'punto_venta'],
+  repuestos: ['marca', 'producto', 'tipo', 'precio', 'punto_venta'],
+}
+
+// Columnas que NO vienen marcadas por defecto en la vista detallada (identificadores unicos por unidad).
+// Asi el default consolida por modelo/año/color y marcar Año, Color, Chasis o Motor tiene efecto visible.
+const FILTER_DEFAULT_EXCLUDED = {
+  motos: ['chasis', 'motor'],
+  motos_e: ['chasis', 'motor'],
+  accesorios: [],
+  repuestos: [],
+}
 
 const loadGridPrefs = (key) => {
   if (typeof window === 'undefined') return {}
@@ -37,6 +83,7 @@ export default function Inventario() {
   const [marcas, setMarcas] = useState([])
   const [puntos, setPuntos] = useState([])
   const [selectedPointId, setSelectedPointId] = useState('')
+  const [locationId, setLocationId] = useState('me')
   const [transferForm, setTransferForm] = useState({})
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -58,13 +105,17 @@ export default function Inventario() {
   const [assignmentCode, setAssignmentCode] = useState('')
   const [assignmentInfo, setAssignmentInfo] = useState(null)
   const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [availability, setAvailability] = useState(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
 
   const isSup = esSupervisor()
   const selectedPoint = puntos.find((point) => String(point.id) === String(selectedPointId))
   const inventoryParams = isSup
     ? { scope: 'all' }
     : usuario?.punto_venta_id
-      ? { scope: 'point', puntoVentaId: usuario.punto_venta_id }
+      ? (locationId === 'central'
+          ? { scope: 'central' }
+          : { scope: 'point', puntoVentaId: locationId && locationId !== 'me' ? locationId : String(usuario.punto_venta_id) })
       : null
   const formatBs = (n) => `Bs ${Number(n || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}`
   const getPrimaryLabel = (item) => item?.tipo || item?.ano || '-'
@@ -74,42 +125,29 @@ export default function Inventario() {
   const getSizeLabel = (item) => item?.talla || '-'
   const getItemName = (item) => `${item?.marca || ''} ${item?.producto || ''} ${getPrimaryLabel(item)} ${getCylinderLabel(item)}`.trim()
   const normalizeGroupValue = (value) => String(value ?? '').trim().toLocaleLowerCase('es')
-  const isAccessoryRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
-  const isSparePartRow = (item) => Object.prototype.hasOwnProperty.call(item ?? {}, 'precio') && !Object.prototype.hasOwnProperty.call(item ?? {}, 'color')
   const showSizeForTab = tab === 'accesorios'
-  const isMotoTab = tab === 'motos' || tab === 'motos_e'
-  const buildGroupKey = (item, includeWarehouse = false) => {
-    if (isMotoTab) {
-      return [
-        normalizeGroupValue(item?.marca),
-        normalizeGroupValue(item?.tipo),
-        normalizeGroupValue(item?.costo ?? item?.precio),
-        normalizeGroupValue(item?.cilindrada),
-        tab === 'motos_e' ? normalizeGroupValue(item?.potencia) : '',
-        includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
-      ].join('||')
-    }
-    return [
-      normalizeGroupValue(item?.marca),
-      normalizeGroupValue(item?.producto),
-      normalizeGroupValue(item?.tipo),
-      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.ano),
-      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.color),
-      normalizeGroupValue(isAccessoryRow(item) ? item?.talla : ''),
-      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.cilindrada),
-      normalizeGroupValue(isAccessoryRow(item) || isSparePartRow(item) ? '' : item?.motor),
-      normalizeGroupValue(item?.costo ?? item?.precio),
-      includeWarehouse ? normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre) : '',
-    ].join('||')
-  }
-  const groupInventoryRows = (rows, includeWarehouse = false) => {
+  const buildGroupKey = (item, groupColumns) => groupColumns
+    .map((columnId) => {
+      if (columnId === 'punto_venta') {
+        return normalizeGroupValue(item?.punto_venta_id ?? item?.punto_venta_nombre)
+      }
+      return normalizeGroupValue(item?.[GROUP_FIELD_BY_COLUMN(tab)[columnId]])
+    })
+    .join('||')
+  const groupInventoryRows = (rows, groupColumns) => {
     const grouped = new Map()
     for (const row of rows) {
-      const key = buildGroupKey(row, includeWarehouse)
+      const key = buildGroupKey(row, groupColumns)
       const existing = grouped.get(key)
       if (existing) {
-        if (existing.color !== row?.color) existing.color = 'Varios'
-        if (isMotoTab && existing.ano !== row?.ano) existing.ano = 'Varios'
+        for (const columnId of Object.keys(GROUP_FIELD_BY_COLUMN(tab))) {
+          if (groupColumns.includes(columnId)) continue
+          const field = GROUP_FIELD_BY_COLUMN(tab)[columnId]
+          if (field === 'punto_venta' || existing[field] === 'Varios') continue
+          if (normalizeGroupValue(existing[field]) !== normalizeGroupValue(row?.[field])) {
+            existing[field] = 'Varios'
+          }
+        }
         existing.cantidad_libre += Number(row?.cantidad_libre || 0)
         existing.cantidad_reservada += Number(row?.cantidad_reservada || 0)
         existing.cantidad_vendida += Number(row?.cantidad_vendida || 0)
@@ -127,13 +165,20 @@ export default function Inventario() {
     }
     return [...grouped.values()]
   }
-  const sortInventoryRows = (rows, field, direction) => {
+  const sortInventoryRows = (rows, field, direction, sortColumns = []) => {
     const list = [...rows]
     list.sort((a, b) => {
       if (field === 'qty') {
         return direction === 'asc'
           ? Number(a?.cantidad_libre || 0) - Number(b?.cantidad_libre || 0)
           : Number(b?.cantidad_libre || 0) - Number(a?.cantidad_libre || 0)
+      }
+      if (sortColumns.length) {
+        const leftKey = buildGroupKey(a, sortColumns)
+        const rightKey = buildGroupKey(b, sortColumns)
+        if (leftKey !== rightKey) {
+          return direction === 'desc' ? (leftKey < rightKey ? 1 : -1) : (leftKey > rightKey ? 1 : -1)
+        }
       }
       const left = getItemName(a).toLocaleLowerCase('es')
       const right = getItemName(b).toLocaleLowerCase('es')
@@ -147,6 +192,13 @@ export default function Inventario() {
     item?.punto_venta_tipo === 'CENTRAL'
       ? 'Almacen central'
       : (item?.punto_venta_nombre || 'Sin asignar')
+  const locationLabel = !isSup
+    ? (locationId === 'central'
+        ? 'Almacen Central'
+        : locationId === 'me'
+          ? (usuario?.punto_venta_tipo === 'CENTRAL' ? 'Almacen Central' : (usuario?.punto_venta_nombre || null))
+          : (puntos.find((point) => String(point.id) === locationId)?.nombre || null))
+    : null
   const tabs = [
     { id: 'motos', label: 'Motos' },
     { id: 'motos_e', label: 'Motos-E' },
@@ -192,7 +244,7 @@ export default function Inventario() {
     }
   }
 
-  useEffect(() => { load() }, [tab, token, selectedPointId, usuario?.punto_venta_id, search])
+  useEffect(() => { load() }, [tab, token, selectedPointId, usuario?.punto_venta_id, search, locationId])
   useEffect(() => {
     if (!isSup) return
     api.configGet({ token }).then(r => {
@@ -210,16 +262,21 @@ export default function Inventario() {
     })
   }, [token])
   useEffect(() => {
-    if (!isSup || !token) return
+    if (!token) return
     api.listarPuntosVenta({ token }).then(r => {
       if (!r.ok) return
       setPuntos(r.data)
-      const firstPoint = r.data.find(point => point.tipo === 'CENTRAL') || r.data.find(point => point.activo)
-      if (!selectedPointId && firstPoint) setSelectedPointId(String(firstPoint.id))
+      if (isSup) {
+        const firstPoint = r.data.find(point => point.tipo === 'CENTRAL') || r.data.find(point => point.activo)
+        if (!selectedPointId && firstPoint) setSelectedPointId(String(firstPoint.id))
+      }
     })
   }, [token])
 
   const handleCreate = async () => {
+    if (['motos', 'motos_e', 'accesorios'].includes(tab) && !form.color?.trim()) {
+      return toast.error('El campo color es obligatorio')
+    }
     try {
       let res
       if (tab === 'motos') res = await api.crearMoto({ token, data: form })
@@ -369,6 +426,19 @@ export default function Inventario() {
     }
   }
 
+  const verDisponibilidad = async (row) => {
+    const ids = row?.sourceIds?.length ? row.sourceIds : [row?.id]
+    if (!ids.length) return
+    setAvailabilityLoading(true)
+    try {
+      const res = await api.disponibilidadProducto({ token, kind: tab, ids })
+      if (!res?.ok) return toast.error(res?.error || 'No se pudo consultar la disponibilidad')
+      setAvailability({ rows: res.data || [], label: getItemName(row) || 'Producto' })
+    } finally {
+      setAvailabilityLoading(false)
+    }
+  }
+
   const S = {
     page: { fontFamily: 'Georgia,serif', color: 'var(--text)' },
     card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18 },
@@ -380,40 +450,40 @@ export default function Inventario() {
   const fieldsByTab = {
     motos: [
       ['marca_id','Marca','marca'],['ano','Año'],['tipo','Modelo'],['color','Color'],['chasis','Chasis'],
-      ['cilindrada','Cilindrada'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
+      ['cilindrada','Cilindrada'],['motor','Motor'],['fecha_recepcion','Fecha de recepción'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     motos_e: [
       ['marca_id','Marca','marca'],['ano','Año'],['tipo','Modelo'],['color','Color'],['chasis','Chasis'],
-      ['potencia','Potencia'],['motor','Motor'],['costo','Costo'],['precio_venta','Precio de venta'],
+      ['potencia','Potencia'],['motor','Motor'],['fecha_recepcion','Fecha de recepción'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     accesorios: [
-      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Codigo'],['color','Color'],['talla','Talla'],['precio','Costo'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Codigo'],['color','Color'],['talla','Talla'],['fecha_recepcion','Fecha de recepción'],['precio','Costo'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     repuestos: [
-      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Descripcion'],['precio','Precio'],['precio_final','Precio Final'],
+      ['marca_id','Marca','marca'],['producto','Producto'],['tipo','Descripcion'],['fecha_recepcion','Fecha de recepción'],['precio','Precio'],['precio_final','Precio Final'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
   }
 
   const sampleCsvByTab = {
     motos: [
-      'marca,ano,tipo,color,chasis,cilindrada,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre',
-      'Honda,2025,Deportiva,Rojo,CHS-0001,500,4T,5000,6200,10,3'
+      'marca,ano,tipo,color,chasis,cilindrada,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
+      'Honda,2025,Deportiva,Rojo,CHS-0001,500,4T,5000,6200,10,3,2026-01-10'
     ].join('\n'),
     motos_e: [
-      'marca,ano,tipo,color,chasis,potencia,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre',
-      'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2'
+      'marca,ano,tipo,color,chasis,potencia,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
+      'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2,2026-02-15'
     ].join('\n'),
     accesorios: [
-      'marca,producto,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'Givi,PARABRISAS,PAR-001,TRANSPARENTE,M,120,150,10,5'
+      'marca,producto,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
+      'Givi,PARABRISAS,PAR-001,TRANSPARENTE,M,120,150,10,5,2026-01-20'
     ].join('\n'),
     repuestos: [
-      'marca,producto,descripcion,precio,precio_final,descuento_maximo_pct,cantidad_libre',
-      'NGK,BUJIA,Bujia,15,20,10,20'
+      'marca,producto,descripcion,precio,precio_final,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
+      'NGK,BUJIA,Bujia,15,20,10,20,2026-03-01'
     ].join('\n'),
   }
 
@@ -437,27 +507,48 @@ export default function Inventario() {
         && (!search.trim() || item.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
       ))
     : items
-  const groupedDisplayedItems = tab === 'marcas' ? displayedItems : groupInventoryRows(displayedItems, true)
-  const groupedPointItems = groupInventoryRows(pointItems, false)
-  const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedDisplayedItems, sortField, sortDirection)
-  const sortedPointItems = sortInventoryRows(groupedPointItems, pointSortField, pointSortDirection)
-  const inventoryColumns = tab === 'marcas' ? [] : getProductGridColumns(tab, { formatBs, getWarehouseLabel, includeWarehouse: true })
+  const inventoryColumns = tab === 'marcas' ? [] : getProductGridColumns(tab, {
+    formatBs,
+    getWarehouseLabel,
+    includeWarehouse: true,
+    showCost: isSup,
+    renderAction: !isSup
+      ? (row) => (
+          <button type="button" onClick={() => verDisponibilidad(row)} style={S.btn}>
+            Disponibilidad
+          </button>
+        )
+      : undefined,
+    actionLabel: 'Disponibilidad',
+  })
   const pointInventoryColumns = tab === 'marcas' ? [] : getProductGridColumns(tab, { formatBs, includeWarehouse: false })
   const defaultDetailColumnIds = inventoryColumns.map((column) => column.id)
   const defaultPointDetailColumnIds = pointInventoryColumns.map((column) => column.id)
+  const defaultFilterColumnIds = defaultDetailColumnIds.filter((id) => !(FILTER_DEFAULT_EXCLUDED[tab] || []).includes(id))
+  const defaultPointFilterColumnIds = defaultPointDetailColumnIds.filter((id) => !(FILTER_DEFAULT_EXCLUDED[tab] || []).includes(id))
   const activeDetailColumnIds = (
     detailColumnsByTab[tab]?.filter((id) => defaultDetailColumnIds.includes(id))?.length
       ? defaultDetailColumnIds.filter((id) => detailColumnsByTab[tab].includes(id))
-      : defaultDetailColumnIds
+      : defaultFilterColumnIds
   )
   const activePointDetailColumnIds = (
     pointDetailColumnsByTab[tab]?.filter((id) => defaultPointDetailColumnIds.includes(id))?.length
       ? defaultPointDetailColumnIds.filter((id) => pointDetailColumnsByTab[tab].includes(id))
-      : defaultPointDetailColumnIds
+      : defaultPointFilterColumnIds
   )
+  // Las columnas marcadas en el selector actuan como filtro/agrupacion: cada valor se separa en su propio item.
+  const mainGroupColumns = tab === 'marcas' ? [] : activeDetailColumnIds.filter((columnId) => GROUP_FIELD_BY_COLUMN(tab)[columnId])
+  const pointGroupColumns = tab === 'marcas' ? [] : activePointDetailColumnIds.filter((columnId) => GROUP_FIELD_BY_COLUMN(tab)[columnId])
+  const simpleGroupColumns = tab === 'marcas' ? [] : (SIMPLE_GROUP_COLUMNS[tab] || [])
+  const groupedSimpleItems = tab === 'marcas' ? displayedItems : groupInventoryRows(displayedItems, simpleGroupColumns)
+  const groupedDisplayedItems = tab === 'marcas' ? displayedItems : groupInventoryRows(displayedItems, mainGroupColumns)
+  const groupedPointItems = groupInventoryRows(pointItems, pointGroupColumns)
+  const sortedSimpleItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedSimpleItems, sortField, sortDirection)
+  const sortedDisplayedItems = tab === 'marcas' ? displayedItems : sortInventoryRows(groupedDisplayedItems, sortField, sortDirection, mainGroupColumns)
+  const sortedPointItems = sortInventoryRows(groupedPointItems, pointSortField, pointSortDirection, pointGroupColumns)
   const listTotals = tab === 'marcas'
     ? { unidades: 0, dinero: 0 }
-    : sortedDisplayedItems.reduce((acc, row) => {
+    : sortedSimpleItems.reduce((acc, row) => {
         const qty = Number(row?.cantidad_libre || 0)
         const price = Number(row?.precio_venta ?? row?.precio_final ?? 0)
         acc.unidades += qty
@@ -470,6 +561,7 @@ export default function Inventario() {
       <ColumnPickerModal
         open={mainColumnPickerOpen && tab !== 'marcas'}
         title={`Columnas de ${tabs.find((item) => item.id === tab)?.label || 'productos'}`}
+        hint="Filtros: las columnas marcadas separan los items por su valor; desmarcar agrupa los valores distintos en 'Varios'. Chasis y Motor vienen desmarcados: márcalos para ver cada unidad."
         columns={inventoryColumns}
         selectedIds={activeDetailColumnIds}
         onToggle={(columnId) => {
@@ -497,6 +589,7 @@ export default function Inventario() {
       <ColumnPickerModal
         open={pointColumnPickerOpen && tab !== 'marcas'}
         title={`Columnas por ubicación de ${tabs.find((item) => item.id === tab)?.label || 'productos'}`}
+        hint="Filtros: las columnas marcadas separan los items por su valor; desmarcar agrupa los valores distintos en 'Varios'. Chasis y Motor vienen desmarcados: márcalos para ver cada unidad."
         columns={pointInventoryColumns}
         selectedIds={activePointDetailColumnIds}
         onToggle={(columnId) => {
@@ -527,8 +620,8 @@ export default function Inventario() {
         <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-soft)' }}>
           {isSup
             ? 'Registro y control del inventario general por ubicacion'
-            : usuario?.punto_venta_nombre
-              ? `Stock asignado a ${usuario.punto_venta_nombre}`
+            : locationLabel
+              ? `Viendo stock de: ${locationLabel}`
               : 'Este vendedor no tiene punto de venta asignado'}
         </div>
       </div>
@@ -549,6 +642,44 @@ export default function Inventario() {
           }}>{t.label}</button>
         ))}
       </div>
+
+      {!isSup && usuario?.punto_venta_id && (
+        <div className="button-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setLocationId('central')}
+            style={{
+              ...S.btn,
+              background: locationId === 'central' || (locationId === 'me' && usuario?.punto_venta_tipo === 'CENTRAL') ? 'var(--accent)' : 'transparent',
+              color: locationId === 'central' || (locationId === 'me' && usuario?.punto_venta_tipo === 'CENTRAL') ? 'var(--accent-contrast)' : 'var(--text-dim)',
+              borderColor: locationId === 'central' || (locationId === 'me' && usuario?.punto_venta_tipo === 'CENTRAL') ? 'var(--accent)' : 'var(--border)',
+            }}
+          >
+            Almacen Central{usuario?.punto_venta_tipo === 'CENTRAL' ? ' (actual)' : ''}
+          </button>
+          {puntos
+            .filter((point) => point.tipo !== 'CENTRAL' && (point.activo || Number(point.id) === Number(usuario?.punto_venta_id)))
+            .map((point) => {
+              const esActual = Number(point.id) === Number(usuario?.punto_venta_id)
+              const selected = locationId === String(point.id) || (locationId === 'me' && esActual)
+              return (
+                <button
+                  key={point.id}
+                  type="button"
+                  onClick={() => setLocationId(String(point.id))}
+                  style={{
+                    ...S.btn,
+                    background: selected ? 'var(--accent)' : 'transparent',
+                    color: selected ? 'var(--accent-contrast)' : 'var(--text-dim)',
+                    borderColor: selected ? 'var(--accent)' : 'var(--border)',
+                  }}
+                >
+                  {point.nombre}{esActual ? ' (actual)' : ''}
+                </button>
+              )
+            })}
+        </div>
+      )}
 
       <div className="grid-main-two">
         <div style={S.card}>
@@ -713,14 +844,16 @@ export default function Inventario() {
                       {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
                       {showSizeForTab && <th style={{ padding: '6px 4px' }}>Talla</th>}
                       {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? 'Potencia' : 'Cilindrada'}</th>}
+                      <th style={{ padding: '6px 4px' }}>F. Recepción</th>
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
-                      <th style={{ padding: '6px 4px' }}>Costo</th>
+                      {isSup && <th style={{ padding: '6px 4px' }}>Costo</th>}
                       <th style={{ padding: '6px 4px' }}>{tab === 'motos' || tab === 'motos_e' ? 'Precio venta' : 'Precio'}</th>
+                      {!isSup && <th style={{ padding: '6px 4px' }}>Disponibilidad</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedDisplayedItems.map(it => (
+                    {sortedSimpleItems.map(it => (
                       <tr key={it.id} style={{ borderTop: '1px solid var(--divider)' }}>
                         <td style={{ padding: '6px 4px' }}>{it.marca || '-'}</td>
                         {(tab === 'accesorios' || tab === 'repuestos') && <td style={{ padding: '6px 4px' }}>{getProductLabel(it)}</td>}
@@ -729,10 +862,18 @@ export default function Inventario() {
                         {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
                         {showSizeForTab && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? getPowerLabel(it) : getCylinderLabel(it)}</td>}
+                        <td style={{ padding: '6px 4px' }}>{it.fecha_recepcion || '-'}</td>
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
-                        <td style={{ padding: '6px 4px' }}>{formatBs(it.costo ?? it.precio)}</td>
+                        {isSup && <td style={{ padding: '6px 4px' }}>{formatBs(it.costo ?? it.precio)}</td>}
                         <td style={{ padding: '6px 4px' }}>{formatBs(it.precio_venta ?? it.precio_final)}</td>
+                        {!isSup && (
+                          <td style={{ padding: '6px 4px' }}>
+                            <button type="button" onClick={() => verDisponibilidad(it)} style={S.btn}>
+                              Disponibilidad
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -794,7 +935,7 @@ export default function Inventario() {
                   <div className="grid-two-tight">
                     {fieldsByTab[tab].map(([key, label, type]) => (
                       <div key={key}>
-                        <div style={S.label}>{label}{key === 'cilindrada' ? ' (expresado en Cc.)' : ''}</div>
+                        <div style={S.label}>{label}{key === 'cilindrada' ? ' (expresado en Cc.)' : ''}{key === 'color' ? ' *' : ''}</div>
                         {type === 'marca' ? (
                           <select
                             style={S.input}
@@ -811,20 +952,26 @@ export default function Inventario() {
                             ))}
                           </select>
                         ) : (
-                          <input
-                            style={S.input}
-                            inputMode={key === 'cilindrada' ? 'numeric' : undefined}
-                            pattern={key === 'cilindrada' ? '[0-9]*' : undefined}
-                            value={form[key] ?? ''}
-                            onChange={e => setForm(f => ({
-                              ...f,
-                              [key]: key === 'color'
-                                ? e.target.value.toLocaleUpperCase('es')
-                                : key === 'cilindrada'
-                                  ? e.target.value.replace(/\D/g, '')
-                                  : e.target.value,
-                            }))}
-                          />
+                          <>
+                            <input
+                              style={S.input}
+                              type={key === 'fecha_recepcion' ? 'date' : undefined}
+                              inputMode={key === 'cilindrada' ? 'numeric' : undefined}
+                              pattern={key === 'cilindrada' ? '[0-9]*' : undefined}
+                              value={form[key] ?? ''}
+                              onChange={e => setForm(f => ({
+                                ...f,
+                                [key]: key === 'color'
+                                  ? e.target.value.toLocaleUpperCase('es').replace(/[^A-ZÁÉÍÓÚÜÑ\s]/g, '')
+                                  : key === 'cilindrada'
+                                    ? e.target.value.replace(/\D/g, '')
+                                    : e.target.value,
+                              }))}
+                            />
+                            {key === 'color' && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Obligatorio · solo letras</div>
+                            )}
+                          </>
                         )}
                       </div>
                     ))}
@@ -973,6 +1120,89 @@ export default function Inventario() {
           </div>
         )}
       </div>
+
+      {availability && (
+        <div
+          onClick={() => setAvailability(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(640px, 100%)',
+              maxHeight: '80vh',
+              overflow: 'auto',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: 18,
+              color: 'var(--text)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, color: 'var(--text-strong)' }}>Disponibilidad</div>
+                <div style={{ fontSize: 12, color: 'var(--text-soft)', marginTop: 4 }}>{availability.label}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAvailability(null)}
+                style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-dim)', borderRadius: 6, padding: '8px 10px', cursor: 'pointer', fontSize: 12 }}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {availabilityLoading ? (
+              <div style={{ color: 'var(--text-muted)' }}>Cargando...</div>
+            ) : availability.rows.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                Sin stock registrado en otras ubicaciones.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ color: 'var(--text-faint)', textAlign: 'left' }}>
+                      <th style={{ padding: '6px 4px' }}>Ubicacion</th>
+                      <th style={{ padding: '6px 4px' }}>Tipo</th>
+                      <th style={{ padding: '6px 4px' }}>Libre</th>
+                      <th style={{ padding: '6px 4px' }}>Reservado</th>
+                      <th style={{ padding: '6px 4px' }}>Vendido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {availability.rows.map((row) => {
+                      const esPuntoActual = row.punto_venta_id !== null && Number(row.punto_venta_id) === Number(usuario?.punto_venta_id)
+                      return (
+                        <tr key={row.punto_venta_id ?? 'central'} style={{ borderTop: '1px solid var(--divider)' }}>
+                          <td style={{ padding: '6px 4px', color: row.punto_venta_id === null ? 'var(--text-strong)' : 'var(--text)' }}>
+                            {row.punto_venta_nombre}
+                            {esPuntoActual && <span style={{ color: 'var(--accent)' }}> · (actual)</span>}
+                          </td>
+                          <td style={{ padding: '6px 4px' }}>{row.punto_venta_tipo === 'CENTRAL' ? 'Almacen' : 'Punto de venta'}</td>
+                          <td style={{ padding: '6px 4px' }}>{row.cantidad_libre}</td>
+                          <td style={{ padding: '6px 4px' }}>{row.cantidad_reservada}</td>
+                          <td style={{ padding: '6px 4px' }}>{row.cantidad_vendida}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,86 +1,85 @@
-# 🏍️ Moto System
+# Moto System
 
-Sistema de gestión de escritorio para concesionario de motos.
+Sistema web de gestion para concesionario de motos.
 
-## Stack — Todo en Node.js / Electron
+## Stack actual
 
-```
-moto-system.exe
-├── Electron (Node.js integrado)   ← proceso principal
-│   ├── better-sqlite3             ← BD directa, sin servidor
-│   └── IPC handlers               ← toda la lógica de negocio
-└── React + Vite                   ← UI empaquetada
-    └── window.api.*               ← llama al proceso principal via IPC
+```text
+Cloudflare Pages   -> frontend React + Vite
+Cloudflare Workers -> API HTTP
+Supabase           -> PostgreSQL + Auth
 ```
 
-**Requerimientos de la máquina cliente:** solo Windows 7/10/11 (64-bit).
-Sin Python, sin Node.js, sin nada extra.
+## Estructura
 
----
-
-## Estructura del proyecto
-
-```
+```text
 moto-system/
-├── electron/
-│   ├── main.js           ← proceso principal, inicia BD + handlers
-│   ├── preload.js        ← bridge seguro Electron ↔ React
-│   ├── db/
-│   │   └── database.js   ← SQLite: schema, tablas, seed
-│   └── ipc/
-│       ├── usuarios.js   ← auth, sesiones, CRUD usuarios
-│       ├── inventario.js ← motos, accesorios, repuestos, trámites
-│       └── negocios.js   ← proformas, ventas, reportes
-├── src/
-│   ├── App.jsx           ← rutas + protección por rol
-│   ├── store/authStore.js← estado global (Zustand)
-│   ├── components/layout/← sidebar + layout principal
-│   └── pages/            ← Login, Dashboard (+ módulos siguientes)
+├── src/                    frontend web
+├── worker/                 API para Cloudflare Workers
+├── supabase/migrations/    esquema y funciones SQL
+├── docs/                   documentacion de migracion
+├── public/
 ├── package.json
 ├── vite.config.js
-└── index.html
+└── wrangler.toml
 ```
-
----
 
 ## Comandos
 
 ```bash
-# Instalar dependencias
 npm install
-
-# Desarrollo (React + Electron simultáneo)
-npm run electron:dev
-
-# Build → genera instalador .exe en dist-electron/
-npm run electron:build
+npm run dev
+npm run dev:worker
+npm run build
+npm run deploy:worker
+npm run deploy:pages
 ```
 
-## Primera vez
+## Requisitos de desarrollo
 
-Al abrir la app, hacer click en **"Crear admin inicial"** en la pantalla de login.
-Esto crea: `usuario: admin` / `contraseña: admin123`
+- Node.js 20 o superior
+- Cuenta/configuracion de Cloudflare
+- Proyecto de Supabase
 
-Cambiar la contraseña después desde Usuarios → Editar.
+## Arranque real
+
+Ver guia completa en:
+
+- [docs/deploy-cloudflare-supabase.md](/home/jose/projects/moto-system-node/moto-system/docs/deploy-cloudflare-supabase.md)
+
+## Variables necesarias
+
+Frontend:
+
+- `VITE_API_BASE_URL`
+- En despliegue no debe apuntar a `http://127.0.0.1:8787` ni `http://localhost:8787`; debe usar la URL publica del Worker.
+
+Worker:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 ## Base de datos
 
-SQLite guardada en:
-`C:\Users\<usuario>\AppData\Roaming\moto-system\moto_system.db`
+La base de datos vive en `Supabase Postgres`.
 
-Backup disponible desde el menú de la aplicación.
+Migraciones actuales:
 
----
+- [001_initial_schema.sql](/home/jose/projects/moto-system-node/moto-system/supabase/migrations/001_initial_schema.sql)
+- [002_constraints_rls_and_triggers.sql](/home/jose/projects/moto-system-node/moto-system/supabase/migrations/002_constraints_rls_and_triggers.sql)
+- [003_proformas_rpc.sql](/home/jose/projects/moto-system-node/moto-system/supabase/migrations/003_proformas_rpc.sql)
+- [004_ventas_rpc.sql](/home/jose/projects/moto-system-node/moto-system/supabase/migrations/004_ventas_rpc.sql)
 
-## Módulos
+## Estado funcional
 
-| Módulo | Estado |
-|--------|--------|
-| Infraestructura (BD + IPC + Auth) | ✅ Completo |
-| Login + Layout + Dashboard | ✅ Completo |
-| Inventario (UI) | 🔜 Siguiente |
-| Proformas (UI) | 🔜 Siguiente |
-| Ventas (UI) | 🔜 Siguiente |
-| Reportes (UI) | 🔜 Siguiente |
-| Usuarios (UI) | 🔜 Siguiente |
-| PDF / Impresión | 🔜 Pendiente |
+- Auth y usuarios: migrado a web
+- Inventario y CSV: migrado a web
+- Proformas: migrado a web
+- Ventas y tramites: migrado a web
+- Reportes: migrado a web
+- Exportaciones: migradas a descargas web
+
+## Nota
+
+El repositorio ya esta orientado a la version web. El codigo heredado de Electron fue retirado del flujo principal.
