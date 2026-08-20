@@ -172,7 +172,7 @@ begin
     venta_item_id bigint not null
   ) on commit drop;
 
-  delete from tmp_proforma_to_venta_item;
+  truncate table tmp_proforma_to_venta_item;
 
   for v_item in
     select * from public.proforma_items where proforma_id = p_proforma_id order by id

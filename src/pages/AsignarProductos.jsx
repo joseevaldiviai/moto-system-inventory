@@ -166,6 +166,8 @@ export default function AsignarProductos() {
       product?.ano && product?.tipo ? product?.ano : null,
       product?.color,
       product?.potencia ?? product?.cilindrada,
+      product?.tipo_bateria,
+      product?.bateria,
     ].filter(Boolean)
     return parts.join(' · ') || `#${product?.id}`
   }
@@ -181,6 +183,8 @@ export default function AsignarProductos() {
         <td>${it.ano ?? ''}</td>
         <td>${it.color ?? ''}</td>
         <td>${it.potencia ?? it.cilindrada ?? ''}</td>
+        <td>${it.tipo_bateria ?? ''}</td>
+        <td>${it.bateria ?? ''}</td>
         <td style="text-align:right">${Number(it.cantidad ?? 0)}</td>
         <td style="text-align:right">${Number(it.precio_venta ?? 0).toFixed(2)}</td>
         <td style="text-align:right">${Number(it.subtotal ?? 0).toFixed(2)}</td>
@@ -216,7 +220,7 @@ export default function AsignarProductos() {
   <table>
     <thead>
       <tr>
-        <th>Tipo</th><th>Marca</th><th>Producto</th><th>Codigo/Descripcion</th><th>Año</th><th>Color</th><th>Potencia / Cilindrada</th>
+        <th>Tipo</th><th>Marca</th><th>Producto</th><th>Codigo/Descripcion</th><th>Año</th><th>Color</th><th>Potencia (expresado en watts) / Cilindrada</th><th>Tipo de batería (Litio - Plomo ácido)</th><th>Batería (expresados en voltios amp/hora)</th>
         <th style="text-align:right">Cantidad</th>
         <th style="text-align:right">Precio venta</th>
         <th style="text-align:right">Subtotal</th>
@@ -312,6 +316,8 @@ export default function AsignarProductos() {
     it.ano && it.tipo ? it.ano : null,
     it.color,
     it.potencia ?? it.cilindrada,
+    it.tipo_bateria,
+    it.bateria,
   ].filter(Boolean).join(' · ') || `#${it.producto_id}`
 
   const abrirRevision = async (ticket) => {
@@ -363,6 +369,8 @@ export default function AsignarProductos() {
         color: product?.color ?? null,
         cilindrada: product?.cilindrada ?? null,
         potencia: product?.potencia ?? null,
+        tipo_bateria: product?.tipo_bateria ?? null,
+        bateria: product?.bateria ?? null,
       }])
     }
     setReviewAddForm((f) => ({ ...f, producto_id: '', cantidad: 1 }))

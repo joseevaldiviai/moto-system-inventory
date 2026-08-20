@@ -1250,7 +1250,7 @@ async function handleAssignmentsCreate(request, env) {
 
 const ASSIGNMENT_DETAIL_SELECT = {
   motos: 'id, marca, tipo, ano, color, cilindrada, costo, precio_venta, activo',
-  motos_e: 'id, marca, tipo, ano, color, potencia, costo, precio_venta, activo',
+  motos_e: 'id, marca, tipo, ano, color, potencia, tipo_bateria, bateria, costo, precio_venta, activo',
   accesorios: 'id, marca, producto, tipo, color, precio, precio_final, activo',
   repuestos: 'id, marca, producto, tipo, precio, precio_final, activo',
 };
@@ -1697,6 +1697,8 @@ async function upsertMotoEFromCsv(admin, data) {
       tipo: data.tipo,
       color: data.color,
       potencia: data.potencia,
+      tipo_bateria: data.tipo_bateria ?? null,
+      bateria: data.bateria ?? null,
       motor: data.motor,
       costo: data.costo,
       precio_venta: data.precio_venta,
@@ -1717,6 +1719,8 @@ async function upsertMotoEFromCsv(admin, data) {
     color: data.color,
     chasis: data.chasis,
     potencia: data.potencia,
+    tipo_bateria: data.tipo_bateria ?? null,
+    bateria: data.bateria ?? null,
     motor: data.motor,
     costo: data.costo,
     precio_venta: data.precio_venta,
@@ -1882,6 +1886,8 @@ async function importInventoryCsv(request, env, kind) {
         color: normalizeNullableUpperText(row.color),
         chasis: row.chasis,
         potencia: textOrNull(row.potencia),
+        tipo_bateria: textOrNull(row.tipo_bateria),
+        bateria: textOrNull(row.bateria),
         motor: textOrNull(row.motor),
         costo: requiredNumber(row.costo, 'costo'),
         precio_venta: requiredNumber(row.precio_venta, 'precio_venta'),

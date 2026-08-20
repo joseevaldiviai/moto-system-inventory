@@ -67,6 +67,8 @@ export default function UbicacionInventario() {
         normalizeGroupValue(item?.costo ?? item?.precio),
         normalizeGroupValue(item?.cilindrada),
         tab === 'motos_e' ? normalizeGroupValue(item?.potencia) : '',
+        tab === 'motos_e' ? normalizeGroupValue(item?.tipo_bateria) : '',
+        tab === 'motos_e' ? normalizeGroupValue(item?.bateria) : '',
       ].join('||')
     }
     return [

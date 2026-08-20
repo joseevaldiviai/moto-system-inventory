@@ -28,7 +28,7 @@ const GROUP_FIELD_BY_COLUMN = (currentTab) => {
       motor: 'motor',
       costo: 'costo',
       fecha_recepcion: 'fecha_recepcion',
-      ...(currentTab === 'motos_e' ? { potencia: 'potencia' } : {}),
+      ...(currentTab === 'motos_e' ? { potencia: 'potencia', tipo_bateria: 'tipo_bateria', bateria: 'bateria' } : {}),
       punto_venta: 'punto_venta',
     }
   }
@@ -47,7 +47,7 @@ const GROUP_FIELD_BY_COLUMN = (currentTab) => {
 // Agrupacion fija de la vista simple (sin selector de columnas), equivalente a la original.
 const SIMPLE_GROUP_COLUMNS = {
   motos: ['marca', 'tipo', 'costo', 'cilindrada', 'punto_venta'],
-  motos_e: ['marca', 'tipo', 'costo', 'cilindrada', 'potencia', 'punto_venta'],
+  motos_e: ['marca', 'tipo', 'costo', 'cilindrada', 'potencia', 'tipo_bateria', 'bateria', 'punto_venta'],
   accesorios: ['marca', 'producto', 'tipo', 'talla', 'precio', 'punto_venta'],
   repuestos: ['marca', 'producto', 'tipo', 'precio', 'punto_venta'],
 }
@@ -455,7 +455,7 @@ export default function Inventario() {
     ],
     motos_e: [
       ['marca_id','Marca','marca'],['ano','Año'],['tipo','Modelo'],['color','Color'],['chasis','Chasis'],
-      ['potencia','Potencia'],['motor','Motor'],['fecha_recepcion','Fecha de recepción'],['costo','Costo'],['precio_venta','Precio de venta'],
+      ['potencia','Potencia (expresado en watts)'],['tipo_bateria','Tipo de batería (Litio - Plomo ácido)'],['bateria','Batería (expresados en voltios amp/hora)'],['motor','Motor'],['fecha_recepcion','Fecha de recepción'],['costo','Costo'],['precio_venta','Precio de venta'],
       ['descuento_maximo_pct','Desc. Max %'],['cantidad_libre','Stock']
     ],
     accesorios: [
@@ -474,8 +474,8 @@ export default function Inventario() {
       'Honda,2025,Deportiva,Rojo,CHS-0001,500,4T,5000,6200,10,3,2026-01-10'
     ].join('\n'),
     motos_e: [
-      'marca,ano,tipo,color,chasis,potencia,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
-      'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Electrico,4200,5100,8,2,2026-02-15'
+      'marca,ano,tipo,color,chasis,potencia,tipo_bateria,bateria,motor,costo,precio_venta,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
+      'Super Soco,2026,Urbana,Negro,EV-0001,3900W,Litio,60V 20Ah,Electrico,4200,5100,8,2,2026-02-15'
     ].join('\n'),
     accesorios: [
       'marca,producto,codigo,color,talla,precio,precio_final,descuento_maximo_pct,cantidad_libre,fecha_recepcion',
@@ -843,7 +843,9 @@ export default function Inventario() {
                       {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Año</th>}
                       {tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>Color</th>}
                       {showSizeForTab && <th style={{ padding: '6px 4px' }}>Talla</th>}
-                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? 'Potencia' : 'Cilindrada'}</th>}
+                      {tab !== 'accesorios' && tab !== 'repuestos' && <th style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? 'Potencia (expresado en watts)' : 'Cilindrada'}</th>}
+                      {tab === 'motos_e' && <th style={{ padding: '6px 4px' }}>Tipo de batería (Litio - Plomo ácido)</th>}
+                      {tab === 'motos_e' && <th style={{ padding: '6px 4px' }}>Batería (expresados en voltios amp/hora)</th>}
                       <th style={{ padding: '6px 4px' }}>F. Recepción</th>
                       <th style={{ padding: '6px 4px' }}>Almacen</th>
                       <th style={{ padding: '6px 4px' }}>Stock</th>
@@ -862,6 +864,8 @@ export default function Inventario() {
                         {tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{it.color || '-'}</td>}
                         {showSizeForTab && <td style={{ padding: '6px 4px' }}>{getSizeLabel(it)}</td>}
                         {tab !== 'accesorios' && tab !== 'repuestos' && <td style={{ padding: '6px 4px' }}>{tab === 'motos_e' ? getPowerLabel(it) : getCylinderLabel(it)}</td>}
+                        {tab === 'motos_e' && <td style={{ padding: '6px 4px' }}>{it.tipo_bateria || '-'}</td>}
+                        {tab === 'motos_e' && <td style={{ padding: '6px 4px' }}>{it.bateria || '-'}</td>}
                         <td style={{ padding: '6px 4px' }}>{it.fecha_recepcion || '-'}</td>
                         <td style={{ padding: '6px 4px' }}>{getWarehouseLabel(it)}</td>
                         <td style={{ padding: '6px 4px' }}>{it.cantidad_libre}</td>
